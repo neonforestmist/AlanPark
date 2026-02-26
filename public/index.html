@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Alan Park</title>
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="menu-open">
+    <main>
+      <canvas id="game"></canvas>
+      <section id="hud">
+        <p id="status">Connecting...</p>
+        <p class="hint">
+          Controls: W/A/S/D or Arrow keys to move, Space to jump
+        </p>
+        <div class="hud-actions">
+          <button id="open-menu-btn" type="button">Pause</button>
+          <button id="reset-round-btn" type="button">Restart</button>
+        </div>
+      </section>
+      <div id="reset-vote-banner" class="top-banner hidden">Restart (0/0)</div>
+      <div id="level-complete-banner" class="top-banner hidden">Level Clear!</div>
+      <div id="waiting-player-banner" class="top-banner hidden">Waiting for player 2</div>
+
+      <section id="menu-overlay" class="open">
+        <img id="menu-logo" src="assets/title.png" alt="Alan Park" />
+        <button id="menu-editor-banner" class="menu-editor-banner" type="button">
+          Make your own level!
+        </button>
+
+        <div class="menu-card" id="menu-main-screen">
+          <h2>Main Menu</h2>
+          <p>Choose an option to host, join, or customize your player name/profile.</p>
+          <div class="menu-actions vertical">
+            <button id="menu-start-btn" type="button">Start Game</button>
+            <button id="menu-join-btn" type="button">Join Game</button>
+            <button id="menu-settings-btn" type="button">Settings</button>
+          </div>
+        </div>
+
+        <div class="menu-card hidden" id="menu-pause-screen">
+          <h2>Paused</h2>
+          <p>Choose what to do next.</p>
+          <div class="menu-actions vertical">
+            <button id="menu-pause-resume-btn" type="button">Resume</button>
+            <button id="menu-pause-restart-btn" type="button">Restart</button>
+            <button id="menu-pause-quit-btn" type="button">Quit Game</button>
+          </div>
+        </div>
+
+        <div class="menu-card hidden" id="menu-level-select-screen">
+          <h2>Select Level</h2>
+          <p class="menu-note">Pick a level to create the room with.</p>
+          <div id="level-list" class="level-list">
+            <p class="level-list-loading">Loading levels...</p>
+          </div>
+          <div class="menu-actions">
+            <button id="menu-level-back-btn" type="button">Back</button>
+          </div>
+        </div>
+
+        <div class="menu-card hidden" id="menu-host-screen">
+          <h2>Host Game</h2>
+          <p id="host-selected-level" class="menu-note selected-level-label"></p>
+          <label for="tether-length-input">Tether Length</label>
+          <input
+            id="tether-length-input"
+            type="range"
+            min="75"
+            max="395"
+            step="5"
+            value="170"
+          />
+          <p id="tether-length-value">170 px</p>
+          <p id="host-room-code" class="menu-code hidden"></p>
+          <p id="host-status-msg" class="menu-note">Create a room to get a join code.</p>
+          <div class="menu-actions">
+            <button id="menu-create-room-btn" type="button">Create Room</button>
+            <button id="menu-play-btn" type="button" class="hidden">Play</button>
+            <button id="menu-copy-code-btn" type="button" class="hidden">Copy Code</button>
+            <button id="menu-host-back-btn" type="button">Back</button>
+          </div>
+        </div>
+
+        <div class="menu-card hidden" id="menu-join-screen">
+          <h2>Join Game</h2>
+          <label for="join-code-input">Room Code</label>
+          <input
+            id="join-code-input"
+            type="text"
+            maxlength="5"
+            placeholder="ABCDE"
+            autocomplete="off"
+          />
+          <p id="join-status-msg" class="menu-note">Enter a code from the host.</p>
+          <div class="menu-actions">
+            <button id="menu-join-submit-btn" type="button">Join Room</button>
+            <button id="menu-join-back-btn" type="button">Back</button>
+          </div>
+        </div>
+
+        <div class="menu-card hidden" id="menu-profile-screen">
+          <h2>Player Preference</h2>
+          <p>Choose your preferred player name/look when joining.</p>
+          <label for="custom-name-input">Player Name</label>
+          <input
+            id="custom-name-input"
+            type="text"
+            placeholder="Name"
+            autocomplete="off"
+            style="text-transform: none;"
+          />
+          <div class="player-preview">
+            <img id="player-preview-img" src="assets/players/player1/idle.png" alt="Player Preview" />
+            <p id="pref-slot-status" class="name-readout">Name:
+Alan</p>
+          </div>
+          <div class="profile-character-section">
+            <p class="profile-section-label">Character</p>
+            <div class="menu-actions profile-choice">
+              <button class="pref-slot-btn" data-pref-profile="0" type="button">
+                <img
+                  class="pref-slot-avatar"
+                  src="assets/players/player1/idle.png"
+                  alt="Alan Character"
+                />
+                <span class="pref-slot-name">Alan</span>
+              </button>
+              <button class="pref-slot-btn" data-pref-profile="1" type="button">
+                <img
+                  class="pref-slot-avatar"
+                  src="assets/players/player2/idle.png"
+                  alt="Leaf Character"
+                />
+                <span class="pref-slot-name">Leaf</span>
+              </button>
+            </div>
+          </div>
+          <div class="menu-actions profile-footer">
+            <button id="menu-profile-save-btn" type="button">Save</button>
+            <button id="menu-profile-back-btn" type="button">Back</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="game.js"></script>
+  </body>
+</html>

@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Alan Park Level Editor</title>
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,500,1,0"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="editor.css" />
+  </head>
+  <body>
+    <main class="editor-shell">
+      <section class="toolbar">
+        <div class="toolbar-main">
+          <div class="toolbar-title">
+            <h1>Alan Park Level Editor</h1>
+            <p>Pick a block, click the map, and export JSON.</p>
+          </div>
+          <div class="tool-group" role="toolbar" aria-label="Tile tools">
+            <button data-tool="block" class="tool active" type="button" title="Solid Block 1">
+              <img src="assets/block.png" alt="" class="tool-icon-image" />
+              <span class="tool-label">Solid Block 1</span>
+            </button>
+            <button data-tool="block2" class="tool" type="button" title="Solid Block 2">
+              <img src="assets/block-2.png" alt="" class="tool-icon-image" />
+              <span class="tool-label">Solid Block 2</span>
+            </button>
+            <button data-tool="lift-h" class="tool" type="button" title="Lift H (3 tiles left/right)">
+              <img src="assets/lift-h.png" alt="" class="tool-icon-image" />
+              <span class="tool-label">Lift H</span>
+            </button>
+            <button data-tool="lift-v" class="tool" type="button" title="Lift V (3 tiles up/down)">
+              <img src="assets/lift-v.png" alt="" class="tool-icon-image" />
+              <span class="tool-label">Lift V</span>
+            </button>
+            <button data-tool="water-shallow" class="tool" type="button" title="Water Shallow">
+              <img src="assets/water-shallow.png" alt="" class="tool-icon-image" />
+              <span class="tool-label">Water Shallow</span>
+            </button>
+            <button data-tool="water-body" class="tool" type="button" title="Water Body">
+              <img src="assets/water-body.png" alt="" class="tool-icon-image" />
+              <span class="tool-label">Water Body</span>
+            </button>
+            <button data-tool="erase" class="tool" type="button" title="Erase Tile">
+              <span class="tool-icon-glyph" aria-hidden="true">ER</span>
+              <span class="tool-label">Erase Tile</span>
+            </button>
+            <div class="divider" aria-hidden="true"></div>
+            <button data-tool="decor1" class="tool" type="button" title="Grass Tuft">
+              <img src="assets/decor/decor-1.png" alt="" class="tool-icon-image" />
+              <span class="tool-label">Grass Tuft</span>
+            </button>
+            <button data-tool="decor2" class="tool" type="button" title="Mushroom">
+              <img src="assets/decor/decor-2.png" alt="" class="tool-icon-image" />
+              <span class="tool-label">Mushroom</span>
+            </button>
+            <button data-tool="decor3" class="tool" type="button" title="Small Tree">
+              <img src="assets/decor/decor-3.png" alt="" class="tool-icon-image" />
+              <span class="tool-label">Small Tree</span>
+            </button>
+            <button data-tool="decor4" class="tool" type="button" title="Shrubs">
+              <img src="assets/decor/decor-4.png" alt="" class="tool-icon-image" />
+              <span class="tool-label">Shrubs</span>
+            </button>
+            <button data-tool="decor5" class="tool" type="button" title="Flowers">
+              <img src="assets/decor/decor-5.png" alt="" class="tool-icon-image" />
+              <span class="tool-label">Flowers</span>
+            </button>
+            <button data-tool="decor6" class="tool" type="button" title="Rock">
+              <img src="assets/decor/decor-6.png" alt="" class="tool-icon-image" />
+              <span class="tool-label">Rock</span>
+            </button>
+            <div class="divider" aria-hidden="true"></div>
+            <button data-tool="spawn1" class="tool" type="button" title="Player 1 Spawn">
+              <img src="assets/players/player1/idle.png" alt="" class="tool-icon-image" />
+              <span class="tool-label">Player 1 Spawn</span>
+            </button>
+            <button data-tool="spawn2" class="tool" type="button" title="Player 2 Spawn">
+              <img src="assets/players/player2/idle.png" alt="" class="tool-icon-image" />
+              <span class="tool-label">Player 2 Spawn</span>
+            </button>
+            <button data-tool="goal" class="tool" type="button" title="Goal Tile">
+              <img src="assets/goal.png" alt="" class="tool-icon-image" />
+              <span class="tool-label">Goal Tile</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <button
+            id="toolbarRoomBadge"
+            class="toolbar-room-badge hidden"
+            type="button"
+            title="Copy room code"
+          >
+            <span class="toolbar-room-dot" aria-hidden="true"></span>
+            <span id="toolbarRoomCode">—</span>
+          </button>
+          <button id="collabBtn" class="action-btn" type="button" title="Collaboration room controls">
+            <span class="action-icon material-symbols-rounded" aria-hidden="true">hub</span>
+            <span id="collabBtnLabel">Collab</span>
+          </button>
+          <button id="participantsBtn" class="action-btn" type="button" title="Show participants">
+            <span class="action-icon material-symbols-rounded" aria-hidden="true">groups</span>
+            <span id="participantsCountLabel">People: 1</span>
+          </button>
+          <button id="previewToggleBtn" class="action-btn" type="button" title="Toggle level preview" aria-pressed="false">
+            <span id="previewToggleIcon" class="action-icon material-symbols-rounded" aria-hidden="true">toggle_off</span>
+            <span id="previewToggleLabel">Preview Off</span>
+          </button>
+          <button id="themeToggleBtn" class="action-btn" type="button" title="Toggle dark mode">
+            <span id="themeToggleIcon" class="action-icon material-symbols-rounded" aria-hidden="true">dark_mode</span>
+            <span id="themeToggleLabel">Dark Mode</span>
+          </button>
+          <button id="backHomeBtn" class="action-btn" type="button" title="Back to home screen">
+            <span class="action-icon material-symbols-rounded" aria-hidden="true">home</span>
+            <span>Back to home</span>
+          </button>
+          <button id="settingsBtn" class="action-btn" type="button" title="Open settings">
+            <span class="action-icon material-symbols-rounded" aria-hidden="true">settings</span>
+            <span>Settings</span>
+          </button>
+        </div>
+      </section>
+
+      <section id="settingsPanel" class="panel hidden">
+        <div class="panel-header">
+          <h2>Settings</h2>
+          <button id="closeSettingsBtn" type="button">X</button>
+        </div>
+        
+        <div class="row">
+          <label class="name-field">
+            <span>Level Name</span>
+            <input
+              id="levelNameInput"
+              type="text"
+              maxlength="60"
+              value="Forest Blocks"
+              placeholder="My Level Name"
+            />
+          </label>
+        </div>
+
+        <div class="row">
+          <label>
+            <span>Columns</span>
+            <input id="colsInput" type="number" min="8" step="1" value="36" />
+          </label>
+          <label>
+            <span>Rows</span>
+            <input id="rowsInput" type="number" min="8" step="1" value="16" />
+          </label>
+        </div>
+
+        <div class="row resize-anchor-row">
+          <label>
+            <span>Horizontal Resize</span>
+            <select id="resizeHorizontalSelect">
+              <option value="right" selected>Expand Right / Trim Right</option>
+              <option value="left">Expand Left / Trim Left</option>
+            </select>
+          </label>
+          <label>
+            <span>Vertical Resize</span>
+            <select id="resizeVerticalSelect">
+              <option value="down" selected>Expand Down / Trim Down</option>
+              <option value="up">Expand Up / Trim Up</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="row">
+          <button id="newGridBtn" type="button">Resize Grid</button>
+          <button id="clearBtn" type="button">Clear All</button>
+        </div>
+
+        <div class="row goal-size-row">
+          <label>Goal W <input id="goalWidthInput" type="number" value="1" disabled /></label>
+          <label>Goal H <input id="goalHeightInput" type="number" value="1" disabled /></label>
+        </div>
+
+        <div class="row json-action-row">
+          <button id="importBtn" type="button">Load JSON</button>
+          <button id="loadTextBtn" type="button">Load Pasted JSON</button>
+          <button id="exportBtn" type="button">Export JSON</button>
+        </div>
+
+        <p class="json-help">
+          Click <strong>Load JSON</strong> to choose a level file from your device, or paste JSON below and click
+          <strong>Load Pasted JSON</strong>. Save exported files and put them in
+          <span class="inline-path">public/levels/</span> (for example
+          <span class="inline-path">public/levels/level1.json</span>).
+        </p>
+        <p id="jsonActionStatus" class="json-status" role="status" aria-live="polite"></p>
+        <textarea
+          id="jsonOutput"
+          spellcheck="false"
+          aria-label="Level JSON"
+          placeholder="Paste level JSON here..."
+        ></textarea>
+        <input id="jsonFileInput" type="file" accept=".json,application/json" hidden />
+      </section>
+
+      <section id="collabPanel" class="panel hidden collab-panel">
+        <div class="panel-header">
+          <h2>Collaboration</h2>
+          <button id="closeCollabBtn" type="button">X</button>
+        </div>
+
+        <div class="collab-connection-bar" id="collabConnectionBar">
+          <span class="collab-connection-dot" id="collabConnectionDot"></span>
+          <span id="collabConnectionLabel">Connecting…</span>
+        </div>
+
+        <div class="collab-section">
+          <h3 class="collab-section-title">Profile</h3>
+          <label class="name-field">
+            <span>Your Name</span>
+            <input
+              id="collabNameInput"
+              type="text"
+              maxlength="20"
+              placeholder="Player Name"
+              autocomplete="off"
+            />
+          </label>
+        </div>
+
+        <div id="collabLobby">
+          <form id="collabCreateForm" class="collab-section" novalidate>
+            <h3 class="collab-section-title">Create Room</h3>
+            <p id="collabCreateHelp" class="json-help collab-help">
+              Create a new room, then share its code.
+            </p>
+            <div class="row">
+              <button id="collabCreateBtn" type="submit">Create Room</button>
+            </div>
+          </form>
+
+          <form id="collabJoinForm" class="collab-section" novalidate>
+            <h3 class="collab-section-title">Join Room</h3>
+            <div class="row">
+              <label class="name-field">
+                <span>Room Code</span>
+                <input
+                  id="collabCodeInput"
+                  type="text"
+                  maxlength="5"
+                  placeholder="ABCDE"
+                  autocomplete="off"
+                />
+              </label>
+              <button id="collabJoinBtn" type="submit">Join Room</button>
+            </div>
+          </form>
+        </div>
+
+        <div id="collabActiveSection" class="collab-section collab-active-section">
+          <h3 class="collab-section-title">Active Room</h3>
+          <div class="collab-room-code-box">
+            <span class="collab-room-code-label">Room Code</span>
+            <div class="collab-room-code-value" id="collabRoomCodeValue">—</div>
+          </div>
+          <div class="row">
+            <button id="collabCopyCodeBtn" type="button">Copy Code</button>
+            <button id="collabLeaveBtn" type="button">Leave Room</button>
+          </div>
+          <p id="collabRoomInfo" class="json-help">Share this code with collaborators.</p>
+        </div>
+
+        <p id="collabStatus" class="json-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="participantsPanel" class="panel hidden participants-panel">
+        <div class="panel-header">
+          <h2>Participants</h2>
+          <button id="closeParticipantsBtn" type="button">X</button>
+        </div>
+        <ul id="participantsList" class="participants-list">
+          <li class="participants-empty">No participants</li>
+        </ul>
+      </section>
+
+      <section class="canvas-wrap">
+        <div id="canvasStage" class="canvas-stage">
+          <div id="canvasViewport" class="canvas-viewport">
+            <canvas id="editorCanvas"></canvas>
+            <div id="cursorLayer" class="cursor-layer" aria-hidden="true"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="editor.js"></script>
+  </body>
+</html>

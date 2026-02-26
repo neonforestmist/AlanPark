@@ -1,0 +1,15 @@
+{
+  "name": "tethered-platformer",
+  "version": "1.0.0",
+  "description": "Local multiplayer 2D platformer where two players are tethered together",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "puppeteer": "^24.37.5",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.3"
+  }
+}
