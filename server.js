@@ -5,7 +5,7 @@ const os = require("os");
 const path = require("path");
 const { Server } = require("socket.io");
 
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = process.env.PORT === undefined ? 3000 : Number(process.env.PORT);
 const HOST = "0.0.0.0";
 const LEVELS_DIRECTORIES = [
   path.join(__dirname, "public", "levels"),
@@ -19,6 +19,12 @@ const PROFILE_COUNT = 2;
 const EDITOR_CHANNEL_PREFIX = "editor:";
 const MAX_EDITOR_NAME_LENGTH = 20;
 const MAX_PLAYER_NAME_LENGTH = 20;
+const RECONNECT_GRACE_MS = 30000;
+const RECOVERY_WINDOW_MS = 45000;
+const RECOVERABLE_DISCONNECT_REASONS = new Set([
+  "transport error", "transport close", "forced close", "ping timeout",
+  "server shutting down", "forced server close",
+]);
 const MAX_EDITOR_ROWS = 120;
 const MAX_EDITOR_COLUMNS = 220;
 const DEFAULT_PROFILE_NAMES = ["Alan", "Leaf"];
@@ -97,7 +103,10 @@ const DEFAULT_LEVEL = {
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  transports: ["websocket"],
+  connectionStateRecovery: { maxDisconnectionDuration: RECOVERY_WINDOW_MS },
+});
 
 app.use("/levels", express.static(path.join(__dirname, "levels")));
 app.use(express.static(path.join(__dirname, "public")));
@@ -609,6 +618,7 @@ function loadWorldFromDisk() {
 const rooms = new Map();
 const editorRooms = new Map();
 const clients = new Map();
+const disconnectedClients = new Map();
 
 function createRoom(code, hostId, tetherLength, world) {
   return {
@@ -794,6 +804,13 @@ function updateMatchState(room) {
     room.winnerAt = 0;
     clearRestartVotes(room);
     return;
+  }
+  if (room.slots.some((id) => disconnectedClients.has(id))) {
+    room.status = "reconnecting";
+    return;
+  }
+  if (room.status === "reconnecting") {
+    room.status = room.winnerAt ? "won" : "playing";
   }
   if (room.status === "waiting") {
     resetRound(room);
@@ -1466,8 +1483,10 @@ function getStatePayload(room) {
   };
 }
 
-function emitRoomState(room) {
-  io.to(room.code).emit("state", getStatePayload(room));
+function emitRoomState(room, volatile = false) {
+  const channel = io.to(room.code);
+  // Only the newest animation frame matters; never replay a backlog of frames.
+  (volatile ? channel.volatile : channel).emit("state", getStatePayload(room));
 }
 
 function normalizeRoomCode(code) {
@@ -1784,7 +1803,10 @@ function buildJoinPayload(socket, room, info) {
 // --- Socket.IO connections ------------------------------------------------
 
 io.on("connection", (socket) => {
-  clients.set(socket.id, createClientState());
+  const restored = socket.recovered && clients.has(socket.id);
+  clearTimeout(disconnectedClients.get(socket.id));
+  disconnectedClients.delete(socket.id);
+  if (!restored) clients.set(socket.id, createClientState());
 
   socket.emit("welcome", {
     id: socket.id,
@@ -1794,6 +1816,26 @@ io.on("connection", (socket) => {
       defaultTetherLength: DEFAULT_TETHER_LENGTH,
     },
   });
+
+  if (restored) {
+    const info = clients.get(socket.id);
+    const room = rooms.get(info.roomCode);
+    if (room) {
+      updateMatchState(room);
+      socket.emit("room-joined", buildJoinPayload(socket, room, info));
+      emitRoomState(room);
+    }
+    const editorRoom = editorRooms.get(info.editorRoomCode);
+    if (editorRoom) {
+      socket.emit("editor-room-joined", buildEditorJoinPayload(socket, editorRoom));
+    }
+  } else if (socket.recovered) {
+    // Socket.IO may still know a session whose application room has expired.
+    for (const channel of socket.rooms) {
+      if (channel !== socket.id) socket.leave(channel);
+    }
+    socket.emit("session-expired");
+  }
 
   socket.on("create-room", (payload, reply) => {
     try {
@@ -1942,7 +1984,7 @@ io.on("connection", (socket) => {
       return;
     }
 
-    socket.to(room.channel).emit("editor-cursor-update", {
+    socket.to(room.channel).volatile.emit("editor-cursor-update", {
       id: socket.id,
       name: info.editorDisplayName || normalizeEditorName("Player"),
       x: Number(x.toFixed(1)),
@@ -2008,20 +2050,50 @@ io.on("connection", (socket) => {
     emitRoomState(room);
   });
 
-  socket.on("disconnect", () => {
-    leaveEditorRoom(socket);
-    leaveCurrentRoom(socket);
-    clients.delete(socket.id);
+  socket.on("disconnect", (reason) => {
+    const info = clients.get(socket.id);
+    const room = rooms.get(info && info.roomCode);
+    const player = room && room.players.get(socket.id);
+    if (player) {
+      player.input = { left: false, right: false, jump: false };
+      player.jumpHeld = false;
+    }
+
+    const cleanup = () => {
+      disconnectedClients.delete(socket.id);
+      leaveEditorRoom(socket);
+      leaveCurrentRoom(socket);
+      clients.delete(socket.id);
+    };
+
+    if (RECOVERABLE_DISCONNECT_REASONS.has(reason)) {
+      const timer = setTimeout(cleanup, RECONNECT_GRACE_MS);
+      timer.unref();
+      disconnectedClients.set(socket.id, timer);
+      if (room) {
+        updateMatchState(room);
+        emitRoomState(room);
+      }
+    } else {
+      cleanup();
+    }
   });
 });
 
 // --- Game loop ------------------------------------------------------------
 
-setInterval(() => {
+let lastRecoveryHeartbeat = 0;
+const gameLoop = setInterval(() => {
+  // Keep recovery offsets fresh even in an idle lobby or editor. Frames and
+  // cursor positions are volatile and deliberately excluded from recovery.
+  if (Date.now() - lastRecoveryHeartbeat >= 5000) {
+    io.emit("session-heartbeat");
+    lastRecoveryHeartbeat = Date.now();
+  }
   for (const room of rooms.values()) {
     const world = room.world;
-    updateMovingPlatforms(world, DT);
     updateMatchState(room);
+    if (room.status !== "reconnecting") updateMovingPlatforms(world, DT);
 
     if (room.status === "playing") {
       const playables = getPlayables(room);
@@ -2070,20 +2142,26 @@ setInterval(() => {
       }
     }
 
-    emitRoomState(room);
+    emitRoomState(room, true);
   }
 }, 1000 / TICK_RATE);
+gameLoop.unref();
+server.on("close", () => {
+  clearInterval(gameLoop);
+  for (const timer of disconnectedClients.values()) clearTimeout(timer);
+});
 
 // --- Startup --------------------------------------------------------------
 
 function getNetworkUrls() {
-  const urls = [`http://localhost:${PORT}`];
+  const port = server.address().port;
+  const urls = [`http://localhost:${port}`];
   const interfaces = os.networkInterfaces();
 
   for (const name of Object.keys(interfaces)) {
     for (const net of interfaces[name] || []) {
       if (net.family === "IPv4" && !net.internal) {
-        urls.push(`http://${net.address}:${PORT}`);
+        urls.push(`http://${net.address}:${port}`);
       }
     }
   }
@@ -2091,11 +2169,14 @@ function getNetworkUrls() {
   return [...new Set(urls)];
 }
 
-server.listen(PORT, HOST, () => {
-  const urls = getNetworkUrls();
-  loadWorldFromDisk();
-  console.log("Server running.");
-  for (const url of urls) {
-    console.log(`Open: ${url}`);
-  }
-});
+// Export the HTTP server (including its upgrade handler) for Vercel.
+module.exports = server;
+
+if (require.main === module) {
+  server.listen(PORT, HOST, () => {
+    const urls = getNetworkUrls();
+    loadWorldFromDisk();
+    console.log("Server running.");
+    for (const url of urls) console.log(`Open: ${url}`);
+  });
+}

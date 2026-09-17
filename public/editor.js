@@ -61,7 +61,9 @@ const themeToggleLabel = document.getElementById("themeToggleLabel");
 const toolGroup = document.querySelector(".tool-group");
 const toolButtons = [...document.querySelectorAll(".tool")];
 
-const socket = typeof window.io === "function" ? window.io() : null;
+const socket = typeof window.io === "function"
+  ? window.io({ transports: ["websocket"], timeout: 10000 })
+  : null;
 
 const PREVIEW_TILE = 30;
 const THEME_STORAGE_KEY = "tile_editor_theme";
@@ -144,6 +146,7 @@ const remoteCursorElements = new Map();
 
 const collabState = {
   roomCode: null,
+  offlineChanges: false,
   selfId: null,
   selfName: null,
   participants: [],
@@ -1577,6 +1580,9 @@ function applyRoomState(payload) {
 
 function leaveCollabLocally() {
   resetPendingCollabAction();
+  clearTimeout(queuedLevelSyncTimer);
+  queuedLevelSyncTimer = null;
+  collabState.offlineChanges = false;
   collabState.roomCode = null;
   updateParticipantsUi([]);
   clearRemoteCursors();
@@ -1589,6 +1595,10 @@ function syncLevelToCollabRoom(force = false) {
   if (!socket || !collabState.roomCode) {
     return;
   }
+  if (!socket.connected) {
+    collabState.offlineChanges = true;
+    return;
+  }
 
   if (queuedLevelSyncTimer && !force) {
     return;
@@ -1596,6 +1606,10 @@ function syncLevelToCollabRoom(force = false) {
 
   const emitLevel = () => {
     queuedLevelSyncTimer = null;
+    if (!socket.connected) {
+      collabState.offlineChanges = true;
+      return;
+    }
     socket.emit("editor-level-update", { level });
   };
 
@@ -2339,15 +2353,54 @@ if (collabNameInput) {
 
 if (socket) {
   socket.on("connect", () => {
+    const lostRoom = collabState.roomCode && !socket.recovered;
+    if (lostRoom) leaveCollabLocally();
     resetPendingCollabAction();
     collabState.selfId = socket.id;
-    setCollabStatus("");
+    setCollabStatus(lostRoom
+      ? "Connection restored. The previous room expired; your level is still here."
+      : "");
     refreshCollabControls();
   });
 
   socket.on("disconnect", () => {
+    if (queuedLevelSyncTimer) {
+      collabState.offlineChanges = true;
+      clearTimeout(queuedLevelSyncTimer);
+      queuedLevelSyncTimer = null;
+    }
+    resetPendingCollabAction();
+    if (!socket.active) leaveCollabLocally();
+    setCollabStatus("Connection lost. Reconnecting to collaboration...", true);
+    refreshCollabControls();
+  });
+
+  socket.on("connect_error", () => {
+    setCollabStatus("Cannot reach the collaboration server. Retrying automatically...", true);
+    refreshCollabControls();
+  });
+
+  socket.on("session-expired", () => {
     leaveCollabLocally();
-    setCollabStatus("Connection lost. Reconnect to continue collaborating.", true);
+    setCollabStatus("The collaboration room expired. Your level is still here.", true);
+  });
+
+  socket.on("editor-room-joined", (response = {}) => {
+    if (!response.ok) return;
+    if (collabState.offlineChanges) {
+      socket.emit("editor-leave-room");
+      leaveCollabLocally();
+      setCollabStatus("Reconnected. Kept your offline edits locally; rejoin to load the shared level.");
+      return;
+    }
+    collabState.selfId = socket.id;
+    collabState.roomCode = response.roomCode;
+    collabState.selfName = response.selfName;
+    if (collabCodeInput) collabCodeInput.value = response.roomCode;
+    if (response.level) withRemoteLevelApply(response.level);
+    applyRoomState(response);
+    enterRoomUi(response.roomCode);
+    setCollabStatus(`Reconnected to room ${response.roomCode}.`);
   });
 
   socket.on("editor-room-state", (payload = {}) => {
@@ -2355,7 +2408,7 @@ if (socket) {
   });
 
   socket.on("editor-level-update", (payload = {}) => {
-    if (!payload.level) {
+    if (!payload.level || collabState.offlineChanges) {
       return;
     }
     withRemoteLevelApply(payload.level);
@@ -2531,6 +2584,9 @@ if (previewToggleBtn) {
 
 window.addEventListener("keydown", handlePreviewKeyDown);
 window.addEventListener("keyup", handlePreviewKeyUp);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) clearPreviewInputState();
+});
 window.addEventListener("blur", clearPreviewInputState);
 
 for (const button of toolButtons) {

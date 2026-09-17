@@ -1,8 +1,11 @@
-const socket = io();
+// Vercel routes polling requests independently. Keep each session on one
+// connection instead of starting with Socket.IO's default polling transport.
+const socket = io({ transports: ["websocket"], timeout: 10000 });
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const statusEl = document.getElementById("status");
+const connectionStatusEl = document.getElementById("connection-status");
 const openMenuBtn = document.getElementById("open-menu-btn");
 const resetRoundBtn = document.getElementById("reset-round-btn");
 const resetVoteBannerEl = document.getElementById("reset-vote-banner");
@@ -57,6 +60,7 @@ const input = { left: false, right: false, jump: false };
 let mySlot = null;
 let myId = null;
 let roomCode = null;
+let abandonedRoomCode = null;
 let isHost = false;
 let preferredProfile = 0;
 let myProfile = null;
@@ -653,7 +657,7 @@ function clearInputAndSync() {
       changed = true;
     }
   }
-  if (changed && roomCode && mySlot !== null && mySlot !== -1) {
+  if (changed && socket.connected && roomCode && mySlot !== null && mySlot !== -1) {
     socket.emit("input", input);
   }
 }
@@ -688,6 +692,7 @@ function closeMenu() {
 }
 
 function clearLocalRoomState() {
+  clearInputAndSync();
   roomCode = null;
   world = null;
   mySlot = null;
@@ -715,6 +720,7 @@ function clearLocalRoomState() {
 
 function leaveRoomToMainMenu() {
   if (roomCode) {
+    abandonedRoomCode = roomCode;
     socket.emit("leave-room");
   }
   clearLocalRoomState();
@@ -728,6 +734,8 @@ function leaveRoomToMainMenu() {
 }
 
 function applyRoomJoined(payload) {
+  abandonedRoomCode = null;
+  showConnectionStatus();
   clearPendingMenuAction();
   myId = payload.id || myId;
   mySlot = payload.slot;
@@ -845,9 +853,12 @@ function updateWaitingPlayerBanner() {
   const showBanner =
     Boolean(roomCode) &&
     Boolean(world) &&
-    state.status === "waiting" &&
-    (state.players || []).length < 2;
+    ((state.status === "waiting" && (state.players || []).length < 2) ||
+      state.status === "reconnecting");
   waitingPlayerBannerEl.classList.toggle("hidden", !showBanner);
+  waitingPlayerBannerEl.textContent = state.status === "reconnecting"
+    ? "Partner reconnecting... Game paused."
+    : "Waiting for player 2";
 }
 
 function normalizeKey(key) {
@@ -870,7 +881,7 @@ function normalizeKey(key) {
 }
 
 function sendInput() {
-  if (menuOpen || !roomCode || mySlot === null || mySlot === -1) {
+  if (!socket.connected || menuOpen || !roomCode || mySlot === null || mySlot === -1) {
     return;
   }
   socket.emit("input", input);
@@ -882,7 +893,7 @@ function requestCreateRoom() {
   }
 
   if (!socket.connected) {
-    setMessage(hostStatusMsg, "Not connected to server. Refresh and try again.", true);
+    setMessage(hostStatusMsg, "Connecting to the game server. Please try again in a moment.", true);
     return;
   }
 
@@ -904,7 +915,7 @@ function requestCreateRoom() {
     clearPendingMenuAction();
     setMessage(
       hostStatusMsg,
-      "No response from server. Restart server and try again.",
+      "The server did not respond. Please try creating the room again.",
       true
     );
   }, 5000);
@@ -934,7 +945,7 @@ function requestJoinRoom() {
   }
 
   if (!socket.connected) {
-    setMessage(joinStatusMsg, "Not connected to server. Refresh and try again.", true);
+    setMessage(joinStatusMsg, "Connecting to the game server. Please try again in a moment.", true);
     return;
   }
 
@@ -951,7 +962,7 @@ function requestJoinRoom() {
     clearPendingMenuAction();
     setMessage(
       joinStatusMsg,
-      "No response from server. Check code and restart server if needed.",
+      "The server did not respond. Please check the code and try again.",
       true
     );
   }, 5000);
@@ -1008,6 +1019,12 @@ window.addEventListener("keyup", (event) => {
     input[mapped] = false;
     sendInput();
   }
+});
+
+// A keyup can be lost when a tab or window loses focus.
+window.addEventListener("blur", clearInputAndSync);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) clearInputAndSync();
 });
 
 setInterval(sendInput, 120);
@@ -1204,6 +1221,29 @@ if (customNameInput) {
   });
 }
 
+function showConnectionStatus(message = "") {
+  connectionStatusEl.textContent = message;
+  connectionStatusEl.classList.toggle("hidden", !message);
+}
+
+function resetExpiredSession() {
+  clearLocalRoomState();
+  updateHostCodeUi();
+  openMenu("main");
+  showConnectionStatus("Connection restored. Your previous room expired; start or join a room.");
+}
+
+socket.on("connect", () => {
+  showConnectionStatus();
+  if (roomCode && !socket.recovered) resetExpiredSession();
+});
+
+socket.on("connect_error", () => {
+  showConnectionStatus("Cannot reach the game server. Retrying automatically...");
+});
+
+socket.on("session-expired", resetExpiredSession);
+
 socket.on("welcome", (payload = {}) => {
   myId = payload.id || myId;
   if (payload.limits) {
@@ -1223,10 +1263,15 @@ socket.on("room-joined", (payload = {}) => {
   if (!payload.ok) {
     return;
   }
+  if (payload.roomCode === abandonedRoomCode) {
+    socket.emit("leave-room");
+    return;
+  }
   applyRoomJoined(payload);
 });
 
 socket.on("state", (nextState = {}) => {
+  if (nextState.roomCode === abandonedRoomCode) return;
   state = {
     ...state,
     ...nextState,
@@ -1279,13 +1324,14 @@ socket.on("settings", (nextSettings = {}) => {
 
 socket.on("disconnect", () => {
   clearPendingMenuAction();
-  if (statusEl) {
-    statusEl.classList.remove("hidden");
+  clearInputAndSync();
+  showConnectionStatus("Connection lost. Reconnecting...");
+  if (!socket.active) {
+    clearLocalRoomState();
+    updateHostCodeUi();
+    openMenu("main");
+    showConnectionStatus("Disconnected. Refresh the page to reconnect.");
   }
-  statusEl.textContent = "Disconnected from server.";
-  clearLocalRoomState();
-  updateHostCodeUi();
-  openMenu("main");
 });
 
 function isPointInsideRect(x, y, rect) {

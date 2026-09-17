@@ -4,12 +4,19 @@
   "description": "Local multiplayer 2D platformer where two players are tethered together",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test tests/*.test.js",
+    "check": "node --check server.js && node --check public/game.js && node --check public/editor.js"
   },
   "dependencies": {
     "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
     "puppeteer": "^24.37.5",
-    "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.3"
+  },
+  "overrides": {
+    "qs": "^6.16.0"
   }
 }
