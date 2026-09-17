@@ -39,10 +39,10 @@
 
         <div class="menu-card" id="menu-main-screen">
           <h2>Main Menu</h2>
-          <p>Choose an option to host, join, or customize your player name/profile.</p>
+          <p>Two friends. One tether. Find your way through the forest together.</p>
           <div class="menu-actions vertical">
-            <button id="menu-start-btn" type="button">Start Game</button>
-            <button id="menu-join-btn" type="button">Join Game</button>
+            <button id="menu-start-btn" type="button">Create a Room</button>
+            <button id="menu-join-btn" type="button">Join a Friend</button>
             <button id="menu-settings-btn" type="button">Settings</button>
           </div>
         </div>
@@ -52,14 +52,16 @@
           <p>Choose what to do next.</p>
           <div class="menu-actions vertical">
             <button id="menu-pause-resume-btn" type="button">Resume</button>
+            <button id="menu-pause-room-btn" type="button">Room &amp; Invite</button>
             <button id="menu-pause-restart-btn" type="button">Restart</button>
             <button id="menu-pause-quit-btn" type="button">Quit Game</button>
           </div>
         </div>
 
-        <div class="menu-card hidden" id="menu-level-select-screen">
-          <h2>Select Level</h2>
-          <p class="menu-note">Pick a level to create the room with.</p>
+        <div class="menu-card room-card hidden" id="menu-level-select-screen">
+          <p class="room-eyebrow">A TWO-PLAYER ADVENTURE</p>
+          <h2>Choose your trail</h2>
+          <p class="room-intro">Every adventure is better together.</p>
           <div id="level-list" class="level-list">
             <p class="level-list-loading">Loading levels...</p>
           </div>
@@ -68,31 +70,46 @@
           </div>
         </div>
 
-        <div class="menu-card hidden" id="menu-host-screen">
-          <h2>Host Game</h2>
-          <p id="host-selected-level" class="menu-note selected-level-label"></p>
-          <label for="tether-length-input">Tether Length</label>
-          <input
-            id="tether-length-input"
-            type="range"
-            min="75"
-            max="395"
-            step="5"
-            value="170"
-          />
-          <p id="tether-length-value">170 px</p>
-          <p id="host-room-code" class="menu-code hidden"></p>
-          <p id="host-status-msg" class="menu-note">Create a room to get a join code.</p>
-          <div class="menu-actions">
+        <div class="menu-card room-card hidden" id="menu-host-screen">
+          <p class="room-eyebrow">STICK TOGETHER</p>
+          <h2 id="room-title">Set up your room</h2>
+          <div class="room-level-row">
+            <div>
+              <span class="room-label">YOUR TRAIL</span>
+              <p id="host-selected-level" class="selected-level-label"></p>
+            </div>
+            <button id="menu-change-level-btn" class="room-text-button" type="button">Change</button>
+          </div>
+          <div id="room-invite" class="room-invite hidden">
+            <span class="room-label">INVITE YOUR FRIEND</span>
+            <p id="host-room-code" class="menu-code" aria-label="Room code"></p>
+            <div class="menu-actions invite-actions">
+              <button id="menu-copy-code-btn" type="button">Copy Code</button>
+              <button id="menu-copy-link-btn" type="button">Copy Invite Link</button>
+            </div>
+          </div>
+          <div id="room-players" class="room-players hidden" aria-label="Players in this room"></div>
+          <p id="room-ready-status" class="room-ready-status" role="status"></p>
+          <div class="room-tether">
+            <div class="room-tether-label">
+              <label for="tether-length-input">Tether length</label>
+              <span id="tether-length-value">170 px</span>
+            </div>
+            <input id="tether-length-input" type="range" min="75" max="395" step="5" value="170" />
+            <p id="tether-help" class="room-help">A shorter tether keeps you closer. A longer one gives you room to roam.</p>
+          </div>
+          <p id="host-status-msg" class="menu-note" role="status"></p>
+          <div class="menu-actions room-footer">
             <button id="menu-create-room-btn" type="button">Create Room</button>
-            <button id="menu-play-btn" type="button" class="hidden">Play</button>
-            <button id="menu-copy-code-btn" type="button" class="hidden">Copy Code</button>
+            <button id="menu-play-btn" type="button" class="hidden">Start Together</button>
             <button id="menu-host-back-btn" type="button">Back</button>
           </div>
         </div>
 
-        <div class="menu-card hidden" id="menu-join-screen">
-          <h2>Join Game</h2>
+        <div class="menu-card room-card hidden" id="menu-join-screen">
+          <p class="room-eyebrow">YOUR PARTNER IS WAITING</p>
+          <h2>Join a friend</h2>
+          <p class="room-intro">Enter their five-character room code.</p>
           <label for="join-code-input">Room Code</label>
           <input
             id="join-code-input"
@@ -100,8 +117,11 @@
             maxlength="5"
             placeholder="ABCDE"
             autocomplete="off"
+            autocapitalize="characters"
+            spellcheck="false"
+            aria-describedby="join-status-msg"
           />
-          <p id="join-status-msg" class="menu-note">Enter a code from the host.</p>
+          <p id="join-status-msg" class="menu-note" role="status">Ask your friend for their room code or invite link.</p>
           <div class="menu-actions">
             <button id="menu-join-submit-btn" type="button">Join Room</button>
             <button id="menu-join-back-btn" type="button">Back</button>

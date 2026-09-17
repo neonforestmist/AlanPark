@@ -4,7 +4,8 @@
 A 2D-platformer game inspired by Super Mario Bros. with the gimmick of two players being tethered together. Players must collaborate together to reach the goal.
 
 ### Core Gameplay
-- 2-player room with **host/join** flow using a 5-character room code.
+- Choose a trail, create a room, and invite a partner with a **5-character code or invite link**.
+- The lobby shows both players. The host selects **Start Together** once both have joined.
 - Both players are connected by a **configurable tether** (host can adjust from menu and in the HUD), and must both work together to clear the level.
 - Round completes only when **both players are inside the goal**.
 
@@ -73,7 +74,8 @@ Vercel instances and fail with `Session ID unknown`. See
 [Vercel's WebSocket documentation](https://vercel.com/docs/functions/websockets).
 
 Two players are required to start a round. Open the game on two devices or in
-two browser tabs, create a room, and join with its five-character code.
+two browser tabs, choose a trail and create a room, then join with its
+five-character code or invite link. The host starts both players together.
 
 Brief connection interruptions reserve the player's slot for 30 seconds and
 pause the match while reconnecting. Recovery restores the existing room when

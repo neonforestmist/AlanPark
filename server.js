@@ -624,7 +624,8 @@ function createRoom(code, hostId, tetherLength, world) {
   return {
     code,
     hostId,
-    status: "waiting",
+    status: "lobby",
+    started: false,
     winnerAt: 0,
     settings: { tetherLength },
     world,
@@ -799,6 +800,11 @@ function getPlayables(room) {
 }
 
 function updateMatchState(room) {
+  if (!room.started) {
+    room.status = "lobby";
+    clearRestartVotes(room);
+    return;
+  }
   if (getActivePlayerCount(room) < 2) {
     room.status = "waiting";
     room.winnerAt = 0;
@@ -1462,6 +1468,7 @@ function serializePlayer(player) {
     width: player.width,
     height: player.height,
     goalLocked: Boolean(player.goalLocked),
+    connected: !disconnectedClients.has(player.id),
   };
 }
 
@@ -1470,6 +1477,7 @@ function getStatePayload(room) {
     roomCode: room.code,
     hostId: room.hostId,
     status: room.status,
+    started: room.started,
     winnerAt: room.winnerAt,
     players: getPlayables(room).map(serializePlayer),
     spectators: room.spectators.size,
@@ -1792,6 +1800,7 @@ function buildJoinPayload(socket, room, info) {
     profile: info.profile,
     roomCode: room.code,
     isHost: info.isHost,
+    started: room.started,
     world: {
       ...room.worldPayload,
       movingPlatforms: serializeMovingPlatforms(room.world.movingPlatforms),
@@ -1897,6 +1906,28 @@ io.on("connection", (socket) => {
 
   socket.on("leave-room", () => {
     leaveCurrentRoom(socket);
+  });
+
+  socket.on("start-game", (_payload, reply) => {
+    const info = clients.get(socket.id);
+    const room = rooms.get(info && info.roomCode);
+    let error;
+    if (!room || room.hostId !== socket.id) {
+      error = "Only the host can start the adventure.";
+    } else if (getActivePlayerCount(room) !== 2 || room.slots.some((id) => disconnectedClients.has(id))) {
+      error = "Wait for your partner to join before starting.";
+    }
+    if (error) {
+      if (typeof reply === "function") reply({ ok: false, error });
+      return;
+    }
+    if (!room.started) {
+      room.started = true;
+      resetRound(room);
+      emitRoomState(room);
+      io.to(room.code).emit("game-started", { roomCode: room.code });
+    }
+    if (typeof reply === "function") reply({ ok: true });
   });
 
   socket.on("editor-create-room", (payload, reply) => {
@@ -2021,7 +2052,7 @@ io.on("connection", (socket) => {
     }
 
     const room = rooms.get(info.roomCode);
-    if (!room) {
+    if (!room || !room.started) {
       return;
     }
 

@@ -30,11 +30,14 @@ const menuJoinBtn = document.getElementById("menu-join-btn");
 const menuSettingsBtn = document.getElementById("menu-settings-btn");
 const menuEditorBanner = document.getElementById("menu-editor-banner");
 const menuPauseResumeBtn = document.getElementById("menu-pause-resume-btn");
+const menuPauseRoomBtn = document.getElementById("menu-pause-room-btn");
 const menuPauseRestartBtn = document.getElementById("menu-pause-restart-btn");
 const menuPauseQuitBtn = document.getElementById("menu-pause-quit-btn");
 
 const menuCreateRoomBtn = document.getElementById("menu-create-room-btn");
 const menuCopyCodeBtn = document.getElementById("menu-copy-code-btn");
+const menuCopyLinkBtn = document.getElementById("menu-copy-link-btn");
+const menuChangeLevelBtn = document.getElementById("menu-change-level-btn");
 const menuPlayBtn = document.getElementById("menu-play-btn");
 const menuHostBackBtn = document.getElementById("menu-host-back-btn");
 
@@ -54,6 +57,11 @@ const tetherLengthInput = document.getElementById("tether-length-input");
 const tetherLengthValue = document.getElementById("tether-length-value");
 const hostRoomCodeEl = document.getElementById("host-room-code");
 const hostStatusMsg = document.getElementById("host-status-msg");
+const roomTitleEl = document.getElementById("room-title");
+const roomInviteEl = document.getElementById("room-invite");
+const roomPlayersEl = document.getElementById("room-players");
+const roomReadyStatusEl = document.getElementById("room-ready-status");
+const tetherHelpEl = document.getElementById("tether-help");
 
 const input = { left: false, right: false, jump: false };
 
@@ -71,8 +79,7 @@ let pendingMenuAction = false;
 let pendingMenuTimer = null;
 let selectedLevelFile = "forest-1-1.json";
 let cachedLevels = null;
-let createRoomAfterLevelPick = false;
-let hasExplicitLevelSelection = false;
+let lastRosterSignature = "";
 let tetherLimits = {
   min: 75,
   max: 395,
@@ -83,6 +90,7 @@ let state = {
   roomCode: null,
   hostId: null,
   status: "waiting",
+  started: false,
   winnerAt: 0,
   players: [],
   spectators: 0,
@@ -396,11 +404,11 @@ function normalizeLevelEntry(entry) {
   const name =
     typeof entry.name === "string" && entry.name.trim()
       ? entry.name.trim()
-      : file.replace(/\.json$/i, "");
+      : file.replace(/\.json$/i, "").replace(/[-_]+/g, " ");
 
   return {
     file,
-    name,
+    name: name.replace(/\.json$/i, ""),
     rows: Math.max(0, Number(entry.rows) || 0),
     cols: Math.max(0, Number(entry.cols) || 0),
   };
@@ -418,16 +426,9 @@ function updateSelectedLevelLabel() {
     return;
   }
 
-  if (!hasExplicitLevelSelection) {
-    hostSelectedLevelEl.textContent = "";
-    hostSelectedLevelEl.classList.add("hidden");
-    return;
-  }
-
   const selected = getSelectedLevelEntry();
-  const levelName = selected ? selected.name : selectedLevelFile.replace(/\.json$/i, "");
-  hostSelectedLevelEl.textContent = `Selected Level: ${levelName}`;
-  hostSelectedLevelEl.classList.remove("hidden");
+  const levelName = roomCode && world ? world.name : selected?.name || "Forest 1-1";
+  setText(hostSelectedLevelEl, levelName);
 }
 
 function handleLevelPicked(level) {
@@ -435,23 +436,15 @@ function handleLevelPicked(level) {
     return;
   }
 
-  const shouldCreateRoom = createRoomAfterLevelPick;
-  createRoomAfterLevelPick = false;
-
   selectedLevelFile = level.file;
-  hasExplicitLevelSelection = true;
   updateSelectedLevelLabel();
   if (Array.isArray(cachedLevels)) {
     renderLevelList(cachedLevels);
   }
 
   showMenuScreen("host");
-  if (shouldCreateRoom) {
-    requestCreateRoom();
-    return;
-  }
-
-  setMessage(hostStatusMsg, `Selected level: ${level.name}.`);
+  updateHostCodeUi();
+  setMessage(hostStatusMsg, "");
 }
 
 function renderLevelList(levels) {
@@ -464,28 +457,42 @@ function renderLevelList(levels) {
   if (!Array.isArray(levels) || levels.length === 0) {
     const emptyEl = document.createElement("p");
     emptyEl.className = "level-list-empty";
-    emptyEl.textContent = "No level JSON files were found.";
+    emptyEl.textContent = "No trails are available yet. Please try again shortly.";
     levelListEl.appendChild(emptyEl);
     return;
   }
 
-  for (const level of levels) {
+  for (const [index, level] of levels.entries()) {
     const levelButton = document.createElement("button");
     levelButton.type = "button";
     levelButton.className = "level-list-item";
+    levelButton.setAttribute("aria-label", level.name);
     if (level.file === selectedLevelFile) {
       levelButton.classList.add("active");
     }
 
+    const numberEl = document.createElement("span");
+    numberEl.className = "level-list-number";
+    numberEl.textContent = String(index + 1).padStart(2, "0");
+    numberEl.setAttribute("aria-hidden", "true");
+    const detailsEl = document.createElement("span");
+    detailsEl.className = "level-list-details";
     const nameEl = document.createElement("span");
     nameEl.className = "level-list-name";
     nameEl.textContent = level.name;
 
     const metaEl = document.createElement("span");
     metaEl.className = "level-list-meta";
-    metaEl.textContent = level.file;
+    metaEl.textContent = level.rows > level.cols
+      ? "Climb toward the canopy"
+      : "Find your way through the forest";
 
-    levelButton.append(nameEl, metaEl);
+    const arrowEl = document.createElement("span");
+    arrowEl.className = "level-list-arrow";
+    arrowEl.textContent = "→";
+    arrowEl.setAttribute("aria-hidden", "true");
+    detailsEl.append(nameEl, metaEl);
+    levelButton.append(numberEl, detailsEl, arrowEl);
     levelButton.addEventListener("click", () => {
       handleLevelPicked(level);
     });
@@ -545,8 +552,7 @@ async function loadLevels(force = false) {
   }
 }
 
-function openLevelSelectForRoomCreate() {
-  createRoomAfterLevelPick = true;
+function openLevelSelect() {
   showMenuScreen("levelSelect");
   void loadLevels();
 }
@@ -557,6 +563,7 @@ function clearPendingMenuAction() {
     clearTimeout(pendingMenuTimer);
     pendingMenuTimer = null;
   }
+  updateHostCodeUi();
 }
 
 function updatePreferredProfileUi() {
@@ -597,23 +604,72 @@ function loadSavedProfilePreferences() {
   }
 }
 
+function setText(element, text) {
+  if (element.textContent !== text) element.textContent = text;
+}
+
+function updateRoomPlayers() {
+  const players = state.players || [];
+  const signature = JSON.stringify([myId, state.hostId, players.map((player) =>
+    [player.id, player.slot, player.profile, player.name, player.connected])]);
+  if (signature === lastRosterSignature) return;
+  lastRosterSignature = signature;
+  roomPlayersEl.replaceChildren();
+
+  for (let slot = 0; slot < 2; slot += 1) {
+    const player = players.find((entry) => entry.slot === slot);
+    const item = document.createElement("div");
+    item.className = `room-player${player ? "" : " empty"}`;
+    const portrait = document.createElement("img");
+    portrait.src = `assets/players/${getProfileFolder(player ? getPlayerProfileIndex(player) : slot)}/idle.png`;
+    portrait.alt = "";
+    const details = document.createElement("div");
+    const name = document.createElement("span");
+    name.className = "room-player-name";
+    name.textContent = player ? player.name : "Open spot";
+    const role = document.createElement("span");
+    role.className = "room-player-role";
+    role.textContent = !player ? "Invite a friend" : player.connected === false
+      ? "Reconnecting..." : `${player.id === state.hostId ? "Host" : "Partner"}${player.id === myId ? " · You" : ""}`;
+    details.append(name, role);
+    item.append(portrait, details);
+    roomPlayersEl.appendChild(item);
+  }
+}
+
 function updateHostCodeUi() {
-  if (!hostRoomCodeEl) {
-    return;
-  }
-  if (roomCode && isHost) {
-    hostRoomCodeEl.textContent = `Room Code: ${roomCode}`;
-    hostRoomCodeEl.classList.remove("hidden");
-    if (menuCreateRoomBtn) menuCreateRoomBtn.classList.add("hidden");
-    if (menuCopyCodeBtn) menuCopyCodeBtn.classList.remove("hidden");
-    if (menuPlayBtn) menuPlayBtn.classList.remove("hidden");
-  } else {
-    hostRoomCodeEl.classList.add("hidden");
-    hostRoomCodeEl.textContent = "";
-    if (menuCreateRoomBtn) menuCreateRoomBtn.classList.remove("hidden");
-    if (menuCopyCodeBtn) menuCopyCodeBtn.classList.add("hidden");
-    if (menuPlayBtn) menuPlayBtn.classList.add("hidden");
-  }
+  const inRoom = Boolean(roomCode);
+  const players = state.players || [];
+  const ready = players.length === 2 && players.every((player) => player.connected !== false);
+  setText(roomTitleEl, inRoom ? "Room lobby" : "Set up your room");
+  setText(hostRoomCodeEl, roomCode || "");
+  roomInviteEl.classList.toggle("hidden", !inRoom);
+  roomPlayersEl.classList.toggle("hidden", !inRoom);
+  menuCreateRoomBtn.classList.toggle("hidden", inRoom);
+  menuChangeLevelBtn.classList.toggle("hidden", inRoom);
+  menuPlayBtn.classList.toggle("hidden", !inRoom);
+  menuCreateRoomBtn.disabled = pendingMenuAction || !socket.connected;
+  menuPlayBtn.disabled = pendingMenuAction || !socket.connected || (!state.started && (!isHost || !ready));
+  menuHostBackBtn.disabled = pendingMenuAction;
+  menuChangeLevelBtn.disabled = pendingMenuAction;
+  menuJoinSubmitBtn.disabled = pendingMenuAction || !socket.connected;
+  menuJoinBackBtn.disabled = pendingMenuAction;
+  tetherLengthInput.disabled = inRoom && !isHost;
+  setText(menuCreateRoomBtn, pendingMenuAction ? "Creating..." : "Create Room");
+  setText(menuJoinSubmitBtn, pendingMenuAction ? "Joining..." : "Join Room");
+  setText(menuPlayBtn, state.started ? (mySlot === -1 ? "Watch Game" : "Back to Game")
+    : pendingMenuAction ? "Starting..." : isHost ? "Start Together" : "Waiting for Host");
+  setText(menuHostBackBtn, inRoom ? "Leave Room" : "Back");
+  setText(tetherHelpEl, inRoom && !isHost ? "Your host sets the tether length."
+    : "A shorter tether keeps you closer. A longer one gives you room to roam.");
+  const message = !inRoom ? "Create a room, then invite your partner."
+    : state.started ? `${players.length}/2 players${state.spectators ? ` · ${state.spectators} watching` : ""}`
+    : !ready ? "Waiting for your partner. Share your code or invite link."
+    : isHost ? "2/2 players · You're both here. Let's go!" : "2/2 players · Your host will start the adventure.";
+  setText(roomReadyStatusEl, message);
+  roomReadyStatusEl.classList.toggle("ready", inRoom && ready);
+  if (inRoom) updateRoomPlayers();
+  updateSelectedLevelLabel();
 }
 
 function showMenuScreen(screen) {
@@ -646,7 +702,7 @@ function showMenuScreen(screen) {
 }
 
 function getDefaultMenuScreen() {
-  return roomCode ? "pause" : "main";
+  return roomCode ? (state.started ? "pause" : "host") : "main";
 }
 
 function clearInputAndSync() {
@@ -683,7 +739,7 @@ function closeMenu() {
   if (!menuOverlay) {
     return;
   }
-  if (!roomCode) {
+  if (!roomCode || !state.started) {
     return;
   }
   menuOpen = false;
@@ -705,6 +761,7 @@ function clearLocalRoomState() {
     roomCode: null,
     hostId: null,
     status: "waiting",
+    started: false,
     winnerAt: 0,
     players: [],
     spectators: 0,
@@ -743,6 +800,7 @@ function applyRoomJoined(payload) {
     myProfile = normalizeProfileIndex(payload.profile);
   }
   roomCode = payload.roomCode || null;
+  state.started = Boolean(payload.started);
   isHost = Boolean(payload.isHost);
   world = payload.world || world;
   camera.x = 0;
@@ -762,11 +820,8 @@ function applyRoomJoined(payload) {
   updatePreferredProfileUi();
   syncTetherControls(getCurrentTetherLength());
 
-  if (isHost) {
-    setMessage(hostStatusMsg, "Room created. Share code and wait for a partner.");
-  } else {
-    setMessage(joinStatusMsg, `Joined room ${roomCode}.`);
-  }
+  setMessage(hostStatusMsg, "");
+  if (!state.started) openMenu("host");
 
   updateStatusText();
   updateResetVoteBanner();
@@ -910,6 +965,7 @@ function requestCreateRoom() {
   }
 
   pendingMenuAction = true;
+  updateHostCodeUi();
   setMessage(hostStatusMsg, "Creating room...");
   pendingMenuTimer = setTimeout(() => {
     clearPendingMenuAction();
@@ -951,12 +1007,14 @@ function requestJoinRoom() {
 
   const code = normalizeRoomCode(joinCodeInput.value);
   joinCodeInput.value = code;
-  if (!code) {
-    setMessage(joinStatusMsg, "Enter a valid room code.", true);
+  if (code.length !== 5) {
+    joinCodeInput.setAttribute("aria-invalid", "true");
+    setMessage(joinStatusMsg, "Room codes have five letters or numbers.", true);
     return;
   }
 
   pendingMenuAction = true;
+  updateHostCodeUi();
   setMessage(joinStatusMsg, "Joining room...");
   pendingMenuTimer = setTimeout(() => {
     clearPendingMenuAction();
@@ -976,7 +1034,10 @@ function requestJoinRoom() {
         return;
       }
       applyRoomJoined(result);
-      closeMenu();
+      if (state.started) closeMenu();
+      const url = new URL(window.location.href);
+      url.searchParams.delete("room");
+      window.history.replaceState(null, "", url);
     }
   );
 }
@@ -1046,19 +1107,7 @@ if (resetRoundBtn) {
 
 if (menuStartBtn) {
   menuStartBtn.addEventListener("click", () => {
-    createRoomAfterLevelPick = false;
-    if (!(roomCode && isHost)) {
-      hasExplicitLevelSelection = false;
-    }
-    showMenuScreen("host");
-    updateSelectedLevelLabel();
-    void loadLevels();
-    updateHostCodeUi();
-    if (roomCode && isHost) {
-      setMessage(hostStatusMsg, "Room already active. You can adjust tether here.");
-    } else {
-      setMessage(hostStatusMsg, "Create a room to get a code.");
-    }
+    openLevelSelect();
   });
 }
 
@@ -1089,6 +1138,9 @@ if (menuPauseResumeBtn) {
   });
 }
 
+menuPauseRoomBtn.addEventListener("click", () => openMenu("host"));
+menuChangeLevelBtn.addEventListener("click", openLevelSelect);
+
 if (menuPauseRestartBtn) {
   menuPauseRestartBtn.addEventListener("click", () => {
     if (!roomCode || mySlot === null || mySlot === -1) {
@@ -1106,14 +1158,17 @@ if (menuPauseQuitBtn) {
 }
 
 if (menuCreateRoomBtn) {
-  menuCreateRoomBtn.addEventListener("click", () => {
-    if (roomCode && isHost) {
-      requestCreateRoom();
-      return;
-    }
-    openLevelSelectForRoomCreate();
-  });
+  menuCreateRoomBtn.addEventListener("click", requestCreateRoom);
 }
+
+menuCopyLinkBtn.addEventListener("click", async () => {
+  if (!roomCode) return;
+  const invite = new URL(window.location.pathname, window.location.origin);
+  invite.searchParams.set("room", roomCode);
+  const copied = await copyTextToClipboard(invite.href);
+  setMessage(hostStatusMsg, copied ? "Invite link copied. Send it to your friend!"
+    : "Couldn't copy the link. Share the room code instead.", !copied);
+});
 
 if (menuCopyCodeBtn) {
   menuCopyCodeBtn.addEventListener("click", async () => {
@@ -1132,25 +1187,29 @@ if (menuCopyCodeBtn) {
 
 if (menuPlayBtn) {
   menuPlayBtn.addEventListener("click", () => {
-    if (!roomCode) {
-      setMessage(hostStatusMsg, "Create a room first.", true);
-      return;
-    }
-    closeMenu();
+    if (!roomCode || pendingMenuAction || !socket.connected) return;
+    if (state.started) return closeMenu();
+    pendingMenuAction = true;
+    updateHostCodeUi();
+    socket.timeout(5000).emit("start-game", {}, (error, result) => {
+      clearPendingMenuAction();
+      if (error || !result?.ok) {
+        setMessage(hostStatusMsg, result?.error || "Couldn't start. Please try again.", true);
+      }
+    });
   });
 }
 
 if (menuLevelBackBtn) {
   menuLevelBackBtn.addEventListener("click", () => {
-    createRoomAfterLevelPick = false;
-    showMenuScreen("host");
+    showMenuScreen("main");
   });
 }
 
 if (menuHostBackBtn) {
   menuHostBackBtn.addEventListener("click", () => {
-    createRoomAfterLevelPick = false;
-    showMenuScreen(roomCode ? "pause" : "main");
+    if (roomCode) leaveRoomToMainMenu();
+    else openLevelSelect();
   });
 }
 
@@ -1188,6 +1247,7 @@ if (menuProfileSaveBtn) {
 if (joinCodeInput) {
   joinCodeInput.addEventListener("input", () => {
     joinCodeInput.value = normalizeRoomCode(joinCodeInput.value);
+    joinCodeInput.removeAttribute("aria-invalid");
   });
 }
 
@@ -1236,6 +1296,7 @@ function resetExpiredSession() {
 socket.on("connect", () => {
   showConnectionStatus();
   if (roomCode && !socket.recovered) resetExpiredSession();
+  updateHostCodeUi();
 });
 
 socket.on("connect_error", () => {
@@ -1268,6 +1329,14 @@ socket.on("room-joined", (payload = {}) => {
     return;
   }
   applyRoomJoined(payload);
+  if (state.started && currentMenuScreen === "host") closeMenu();
+});
+
+socket.on("game-started", (payload = {}) => {
+  if (payload.roomCode !== roomCode) return;
+  state.started = true;
+  clearPendingMenuAction();
+  closeMenu();
 });
 
 socket.on("state", (nextState = {}) => {
@@ -1325,6 +1394,7 @@ socket.on("settings", (nextSettings = {}) => {
 socket.on("disconnect", () => {
   clearPendingMenuAction();
   clearInputAndSync();
+  updateHostCodeUi();
   showConnectionStatus("Connection lost. Reconnecting...");
   if (!socket.active) {
     clearLocalRoomState();
@@ -1865,4 +1935,10 @@ function frame() {
 updateSelectedLevelLabel();
 void loadLevels();
 openMenu("main");
+const invitedCode = normalizeRoomCode(new URLSearchParams(window.location.search).get("room"));
+if (invitedCode.length === 5) {
+  joinCodeInput.value = invitedCode;
+  showMenuScreen("join");
+  setMessage(joinStatusMsg, "You've been invited! Join when you're ready.");
+}
 frame();

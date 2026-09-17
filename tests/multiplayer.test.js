@@ -88,8 +88,34 @@ async function pair(t, levelFile = "forest-1-1.json") {
     code: room.roomCode, preferredProfile: 0, customName: "Test Leaf",
   });
   assert.equal(joined.ok, true, joined.error);
+  assert.equal((await request(host, "start-game", {})).ok, true);
   return { host, guest, room, joined };
 }
+
+test("the lobby waits for two players and only the host can start everyone together", async (t) => {
+  const host = await connect(t);
+  const room = await request(host, "create-room", { levelFile: "forest-1-1.json" });
+  assert.equal(room.started, false);
+  assert.equal((await request(host, "start-game", {})).ok, false);
+  const guest = await connect(t);
+  await request(guest, "join-room", { code: room.roomCode });
+  assert.equal((await request(guest, "start-game", {})).ok, false);
+  const lobby = await event(host, "state");
+  assert.equal(lobby.status, "lobby");
+  assert.equal(lobby.started, false);
+  host.emit("input", { right: true, jump: true });
+  host.emit("restart");
+  guest.emit("restart");
+  await wait(100);
+  const stillWaiting = await event(host, "state");
+  assert.equal(stillWaiting.status, "lobby");
+  assert.deepEqual(stillWaiting.players.map((player) => [player.x, player.y]),
+    lobby.players.map((player) => [player.x, player.y]));
+  const started = event(guest, "game-started");
+  assert.equal((await request(host, "start-game", {})).ok, true);
+  assert.equal((await started).roomCode, room.roomCode);
+  assert.equal((await event(guest, "state")).status, "playing");
+});
 
 test("serves all three levels, the game, the editor and their critical assets", async () => {
   const response = await fetch(`${baseUrl}/api/levels`);
