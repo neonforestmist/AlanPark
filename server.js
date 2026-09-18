@@ -1908,14 +1908,40 @@ io.on("connection", (socket) => {
     leaveCurrentRoom(socket);
   });
 
+  socket.on("set-room-level", (payload, reply) => {
+    const info = clients.get(socket.id);
+    const room = rooms.get(info && info.roomCode);
+    let error;
+    if (!room || room.hostId !== socket.id) {
+      error = "Only the host can choose the trail.";
+    } else if (room.started) {
+      error = "Choose a trail before starting the adventure.";
+    }
+    if (error) {
+      if (typeof reply === "function") reply({ ok: false, error });
+      return;
+    }
+    try {
+      const { safeName, filePath } = resolveLevelFilePath(payload?.levelFile);
+      if (!payload?.levelFile || safeName !== payload.levelFile) throw new Error("Invalid trail");
+      const nextWorld = buildWorld(JSON.parse(fs.readFileSync(filePath, "utf8")));
+      room.world = nextWorld;
+      room.worldPayload = buildWorldPayload(nextWorld);
+      for (const player of room.players.values()) resetPlayer(player, nextWorld);
+      io.to(room.code).emit("room-level", { roomCode: room.code, world: room.worldPayload });
+      emitRoomState(room);
+      if (typeof reply === "function") reply({ ok: true });
+    } catch (_error) {
+      if (typeof reply === "function") reply({ ok: false, error: "That trail is unavailable." });
+    }
+  });
+
   socket.on("start-game", (_payload, reply) => {
     const info = clients.get(socket.id);
     const room = rooms.get(info && info.roomCode);
     let error;
     if (!room || room.hostId !== socket.id) {
       error = "Only the host can start the adventure.";
-    } else if (getActivePlayerCount(room) !== 2 || room.slots.some((id) => disconnectedClients.has(id))) {
-      error = "Wait for your partner to join before starting.";
     }
     if (error) {
       if (typeof reply === "function") reply({ ok: false, error });

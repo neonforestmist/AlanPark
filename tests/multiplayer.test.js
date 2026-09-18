@@ -92,11 +92,10 @@ async function pair(t, levelFile = "forest-1-1.json") {
   return { host, guest, room, joined };
 }
 
-test("the lobby waits for two players and only the host can start everyone together", async (t) => {
+test("the lobby stays open until the host starts everyone together", async (t) => {
   const host = await connect(t);
   const room = await request(host, "create-room", { levelFile: "forest-1-1.json" });
   assert.equal(room.started, false);
-  assert.equal((await request(host, "start-game", {})).ok, false);
   const guest = await connect(t);
   await request(guest, "join-room", { code: room.roomCode });
   assert.equal((await request(guest, "start-game", {})).ok, false);
@@ -115,6 +114,57 @@ test("the lobby waits for two players and only the host can start everyone toget
   assert.equal((await request(host, "start-game", {})).ok, true);
   assert.equal((await started).roomCode, room.roomCode);
   assert.equal((await event(guest, "state")).status, "playing");
+});
+
+test("the host can enter the game before a friend joins", async (t) => {
+  const host = await connect(t);
+  const room = await request(host, "create-room", {});
+  const started = event(host, "game-started");
+  assert.equal((await request(host, "start-game", {})).ok, true);
+  assert.equal((await started).roomCode, room.roomCode);
+  const waiting = await event(host, "state");
+  assert.equal(waiting.started, true);
+  assert.equal(waiting.status, "waiting");
+  assert.equal(waiting.players.length, 1);
+  const guest = await connect(t);
+  const joined = await request(guest, "join-room", { code: room.roomCode });
+  assert.equal(joined.ok, true);
+  assert.equal(joined.started, true);
+  const playing = await event(host, "state", s => s.status === "playing");
+  assert.equal(playing.players.length, 2);
+  assert.equal((await request(guest, "start-game", {})).ok, false);
+});
+
+test("friends join before trail selection and keep the same lobby when the host changes it", async (t) => {
+  const host = await connect(t);
+  const room = await request(host, "create-room", { preferredProfile: 1, customName: "Host" });
+  assert.equal(room.ok, true);
+  assert.equal(room.started, false);
+  assert.equal(room.profile, 1);
+  const guest = await connect(t);
+  const joined = await request(guest, "join-room", {
+    code: room.roomCode, preferredProfile: 0, customName: "Friend",
+  });
+  assert.equal(joined.ok, true);
+  assert.equal(joined.started, false);
+  assert.equal(joined.profile, 0);
+  assert.equal((await request(guest, "set-room-level", { levelFile: "forest-1-2.json" })).ok, false);
+  assert.equal((await request(host, "set-room-level", { levelFile: "missing.json" })).ok, false);
+  const hostLevel = event(host, "room-level");
+  const guestLevel = event(guest, "room-level");
+  assert.equal((await request(host, "set-room-level", { levelFile: "forest-1-2.json" })).ok, true);
+  for (const update of await Promise.all([hostLevel, guestLevel])) {
+    assert.equal(update.roomCode, room.roomCode);
+    assert.equal(update.world.name, "Forest 1-2");
+  }
+  const lobby = await event(guest, "state");
+  assert.equal(lobby.started, false);
+  assert.equal(lobby.status, "lobby");
+  assert.deepEqual(lobby.players.map(p => [p.name, p.profile]), [["Host", 1], ["Friend", 0]]);
+  const started = event(guest, "game-started");
+  assert.equal((await request(host, "start-game", {})).ok, true);
+  assert.equal((await started).roomCode, room.roomCode);
+  assert.equal((await request(host, "set-room-level", { levelFile: "forest-1-3.json" })).ok, false);
 });
 
 test("serves all three levels, the game, the editor and their critical assets", async () => {

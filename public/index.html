@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Grab a friend and explore Alan Park, a free two-player forest adventure. Build your own levels and meet Super Alan Run for iPhone and iPad." />
     <title>Alan Park</title>
     <link rel="icon" type="image/png" href="assets/players/player1/idle.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -31,19 +32,49 @@
       <div id="level-complete-banner" class="top-banner hidden">Level Clear!</div>
       <div id="waiting-player-banner" class="top-banner hidden">Waiting for player 2</div>
 
-      <section id="menu-overlay" class="open">
-        <img id="menu-logo" src="assets/title.png" alt="Alan Park" />
-        <button id="menu-editor-banner" class="menu-editor-banner" type="button">
-          Make your own level!
-        </button>
+      <section id="menu-overlay" class="open home-mode">
+        <div class="menu-home" id="menu-main-screen">
+          <div class="home-hero">
+            <header class="home-identity">
+              <h1 id="menu-logo" aria-label="Alan Park">
+                <span class="logo-word" aria-hidden="true"><span class="logo-letter logo-red" data-letter="A">A</span><span class="logo-letter logo-green" data-letter="L">L</span><span class="logo-letter logo-blue" data-letter="A">A</span><span class="logo-letter logo-gold" data-letter="N">N</span></span>
+                <span class="logo-word" aria-hidden="true"><span class="logo-letter" data-letter="P">P</span><span class="logo-letter" data-letter="A">A</span><span class="logo-letter" data-letter="R">R</span><span class="logo-letter" data-letter="K">K</span></span>
+              </h1>
+            </header>
 
-        <div class="menu-card" id="menu-main-screen">
-          <h2>Main Menu</h2>
-          <p>Two friends. One tether. Find your way through the forest together.</p>
-          <div class="menu-actions vertical">
-            <button id="menu-start-btn" type="button">Create a Room</button>
-            <button id="menu-join-btn" type="button">Join a Friend</button>
-            <button id="menu-settings-btn" type="button">Settings</button>
+            <div class="home-play">
+              <div class="home-actions">
+                <button id="menu-start-btn" class="home-module home-play-button" type="button">Create a Room</button>
+                <button id="menu-join-btn" class="home-module home-play-button home-join-button" type="button">Join a Friend</button>
+              </div>
+              <button id="menu-settings-btn" class="home-module home-settings" type="button">Settings</button>
+            </div>
+          </div>
+
+          <nav class="home-nav" aria-label="Main menu">
+            <button id="menu-app-btn" class="home-module home-nav-button" type="button">
+              <span class="mobile-promo-caption">
+                <span>Try Alan on Mobile!</span>
+              </span>
+              <span class="mobile-promo-name">
+                <img src="assets/super-alan-run-icon.png" alt="" width="32" height="32" />
+                <span>Super Alan Run</span>
+              </span>
+            </button>
+            <button id="menu-editor-banner" class="home-module home-nav-button home-nav-editor" type="button">
+              <img src="assets/alan-painter.png" alt="" width="312" height="276" />
+              <span>Make your own level</span>
+            </button>
+          </nav>
+        </div>
+
+        <div class="menu-card app-screen hidden" id="menu-app-screen">
+          <img class="app-icon" src="assets/super-alan-run-icon.png" alt="" width="1024" height="1024" />
+          <h2>Super Alan Run</h2>
+          <p>Go solo. Collect coins, unlock skins, and see how far Alan can run.</p>
+          <p class="app-platform">For iPhone &amp; iPad</p>
+          <div class="menu-actions">
+            <button id="menu-app-back-btn" type="button">Back</button>
           </div>
         </div>
 
@@ -59,7 +90,6 @@
         </div>
 
         <div class="menu-card room-card hidden" id="menu-level-select-screen">
-          <p class="room-eyebrow">A TWO-PLAYER ADVENTURE</p>
           <h2>Choose your trail</h2>
           <p class="room-intro">Every adventure is better together.</p>
           <div id="level-list" class="level-list">
@@ -71,7 +101,6 @@
         </div>
 
         <div class="menu-card room-card hidden" id="menu-host-screen">
-          <p class="room-eyebrow">STICK TOGETHER</p>
           <h2 id="room-title">Set up your room</h2>
           <div class="room-level-row">
             <div>
@@ -82,11 +111,14 @@
           </div>
           <div id="room-invite" class="room-invite hidden">
             <span class="room-label">INVITE YOUR FRIEND</span>
-            <p id="host-room-code" class="menu-code" aria-label="Room code"></p>
-            <div class="menu-actions invite-actions">
-              <button id="menu-copy-code-btn" type="button">Copy Code</button>
-              <button id="menu-copy-link-btn" type="button">Copy Invite Link</button>
+            <div class="room-code-row">
+              <p id="host-room-code" class="menu-code" aria-label="Room code"></p>
+              <button id="menu-copy-code-btn" class="room-copy-button" type="button" aria-label="Copy room code" title="Copy room code">
+                <svg class="clipboard-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 5H5v16h14V5h-3"/><path d="M8 3h8v5H8z"/></svg>
+                <svg class="copied-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>
+              </button>
             </div>
+            <p id="room-copy-status" class="room-copy-status" role="status" aria-live="polite"></p>
           </div>
           <div id="room-players" class="room-players hidden" aria-label="Players in this room"></div>
           <p id="room-ready-status" class="room-ready-status" role="status"></p>
@@ -107,7 +139,6 @@
         </div>
 
         <div class="menu-card room-card hidden" id="menu-join-screen">
-          <p class="room-eyebrow">YOUR PARTNER IS WAITING</p>
           <h2>Join a friend</h2>
           <p class="room-intro">Enter their five-character room code.</p>
           <label for="join-code-input">Room Code</label>

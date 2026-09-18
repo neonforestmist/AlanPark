@@ -12,7 +12,6 @@ const resetVoteBannerEl = document.getElementById("reset-vote-banner");
 const levelCompleteBannerEl = document.getElementById("level-complete-banner");
 const waitingPlayerBannerEl = document.getElementById("waiting-player-banner");
 const menuOverlay = document.getElementById("menu-overlay");
-const menuLogo = document.getElementById("menu-logo");
 
 const menuMainScreen = document.getElementById("menu-main-screen");
 const menuPauseScreen = document.getElementById("menu-pause-screen");
@@ -20,6 +19,7 @@ const menuLevelSelectScreen = document.getElementById("menu-level-select-screen"
 const menuHostScreen = document.getElementById("menu-host-screen");
 const menuJoinScreen = document.getElementById("menu-join-screen");
 const menuProfileScreen = document.getElementById("menu-profile-screen");
+const menuAppScreen = document.getElementById("menu-app-screen");
 
 const levelListEl = document.getElementById("level-list");
 const menuLevelBackBtn = document.getElementById("menu-level-back-btn");
@@ -28,6 +28,8 @@ const hostSelectedLevelEl = document.getElementById("host-selected-level");
 const menuStartBtn = document.getElementById("menu-start-btn");
 const menuJoinBtn = document.getElementById("menu-join-btn");
 const menuSettingsBtn = document.getElementById("menu-settings-btn");
+const menuAppBtn = document.getElementById("menu-app-btn");
+const menuAppBackBtn = document.getElementById("menu-app-back-btn");
 const menuEditorBanner = document.getElementById("menu-editor-banner");
 const menuPauseResumeBtn = document.getElementById("menu-pause-resume-btn");
 const menuPauseRoomBtn = document.getElementById("menu-pause-room-btn");
@@ -36,7 +38,7 @@ const menuPauseQuitBtn = document.getElementById("menu-pause-quit-btn");
 
 const menuCreateRoomBtn = document.getElementById("menu-create-room-btn");
 const menuCopyCodeBtn = document.getElementById("menu-copy-code-btn");
-const menuCopyLinkBtn = document.getElementById("menu-copy-link-btn");
+const roomCopyStatusEl = document.getElementById("room-copy-status");
 const menuChangeLevelBtn = document.getElementById("menu-change-level-btn");
 const menuPlayBtn = document.getElementById("menu-play-btn");
 const menuHostBackBtn = document.getElementById("menu-host-back-btn");
@@ -436,6 +438,25 @@ function handleLevelPicked(level) {
     return;
   }
 
+  if (roomCode) {
+    if (!isHost || state.started || pendingMenuAction) return;
+    pendingMenuAction = true;
+    showMenuScreen("host");
+    updateHostCodeUi();
+    setMessage(hostStatusMsg, "Changing trail...");
+    socket.timeout(5000).emit("set-room-level", { levelFile: level.file }, (error, result) => {
+      clearPendingMenuAction();
+      if (error || !result?.ok) {
+        setMessage(hostStatusMsg, result?.error || "Couldn't change the trail. Please try again.", true);
+        return;
+      }
+      selectedLevelFile = level.file;
+      updateSelectedLevelLabel();
+      setMessage(hostStatusMsg, "");
+    });
+    return;
+  }
+
   selectedLevelFile = level.file;
   updateSelectedLevelLabel();
   if (Array.isArray(cachedLevels)) {
@@ -620,9 +641,6 @@ function updateRoomPlayers() {
     const player = players.find((entry) => entry.slot === slot);
     const item = document.createElement("div");
     item.className = `room-player${player ? "" : " empty"}`;
-    const portrait = document.createElement("img");
-    portrait.src = `assets/players/${getProfileFolder(player ? getPlayerProfileIndex(player) : slot)}/idle.png`;
-    portrait.alt = "";
     const details = document.createElement("div");
     const name = document.createElement("span");
     name.className = "room-player-name";
@@ -632,7 +650,7 @@ function updateRoomPlayers() {
     role.textContent = !player ? "Invite a friend" : player.connected === false
       ? "Reconnecting..." : `${player.id === state.hostId ? "Host" : "Partner"}${player.id === myId ? " · You" : ""}`;
     details.append(name, role);
-    item.append(portrait, details);
+    item.append(details);
     roomPlayersEl.appendChild(item);
   }
 }
@@ -642,14 +660,18 @@ function updateHostCodeUi() {
   const players = state.players || [];
   const ready = players.length === 2 && players.every((player) => player.connected !== false);
   setText(roomTitleEl, inRoom ? "Room lobby" : "Set up your room");
+  if (hostRoomCodeEl.textContent !== (roomCode || "")) {
+    menuCopyCodeBtn.classList.remove("copied");
+    roomCopyStatusEl.textContent = "";
+  }
   setText(hostRoomCodeEl, roomCode || "");
   roomInviteEl.classList.toggle("hidden", !inRoom);
   roomPlayersEl.classList.toggle("hidden", !inRoom);
   menuCreateRoomBtn.classList.toggle("hidden", inRoom);
-  menuChangeLevelBtn.classList.toggle("hidden", inRoom);
+  menuChangeLevelBtn.classList.toggle("hidden", inRoom && (!isHost || state.started));
   menuPlayBtn.classList.toggle("hidden", !inRoom);
   menuCreateRoomBtn.disabled = pendingMenuAction || !socket.connected;
-  menuPlayBtn.disabled = pendingMenuAction || !socket.connected || (!state.started && (!isHost || !ready));
+  menuPlayBtn.disabled = pendingMenuAction || !socket.connected || (!state.started && !isHost);
   menuHostBackBtn.disabled = pendingMenuAction;
   menuChangeLevelBtn.disabled = pendingMenuAction;
   menuJoinSubmitBtn.disabled = pendingMenuAction || !socket.connected;
@@ -664,7 +686,7 @@ function updateHostCodeUi() {
     : "A shorter tether keeps you closer. A longer one gives you room to roam.");
   const message = !inRoom ? "Create a room, then invite your partner."
     : state.started ? `${players.length}/2 players${state.spectators ? ` · ${state.spectators} watching` : ""}`
-    : !ready ? "Waiting for your partner. Share your code or invite link."
+    : !ready ? "Share your room code. You can start while your friend joins."
     : isHost ? "2/2 players · You're both here. Let's go!" : "2/2 players · Your host will start the adventure.";
   setText(roomReadyStatusEl, message);
   roomReadyStatusEl.classList.toggle("ready", inRoom && ready);
@@ -681,6 +703,7 @@ function showMenuScreen(screen) {
     host: menuHostScreen,
     join: menuJoinScreen,
     profile: menuProfileScreen,
+    app: menuAppScreen,
   };
 
   for (const [name, element] of Object.entries(map)) {
@@ -690,14 +713,9 @@ function showMenuScreen(screen) {
     element.classList.toggle("hidden", name !== screen);
   }
 
-  if (menuLogo) {
-    menuLogo.classList.toggle("hidden", screen !== "main");
-  }
-  if (menuEditorBanner) {
-    menuEditorBanner.classList.toggle("hidden", screen !== "main");
-  }
   if (menuOverlay) {
     menuOverlay.classList.toggle("pause-mode", screen === "pause");
+    menuOverlay.classList.toggle("home-mode", screen === "main");
   }
 }
 
@@ -1045,6 +1063,11 @@ function requestJoinRoom() {
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     event.preventDefault();
+    if (menuOpen && currentMenuScreen === "app") {
+      showMenuScreen("main");
+      menuAppBtn.focus();
+      return;
+    }
     if (menuOpen) {
       closeMenu();
     } else {
@@ -1107,7 +1130,9 @@ if (resetRoundBtn) {
 
 if (menuStartBtn) {
   menuStartBtn.addEventListener("click", () => {
-    openLevelSelect();
+    loadSavedProfilePreferences();
+    showMenuScreen("host");
+    requestCreateRoom();
   });
 }
 
@@ -1131,6 +1156,12 @@ if (menuEditorBanner) {
     window.location.href = "editor.html";
   });
 }
+
+menuAppBtn.addEventListener("click", () => showMenuScreen("app"));
+menuAppBackBtn.addEventListener("click", () => {
+  showMenuScreen("main");
+  menuAppBtn.focus();
+});
 
 if (menuPauseResumeBtn) {
   menuPauseResumeBtn.addEventListener("click", () => {
@@ -1161,27 +1192,14 @@ if (menuCreateRoomBtn) {
   menuCreateRoomBtn.addEventListener("click", requestCreateRoom);
 }
 
-menuCopyLinkBtn.addEventListener("click", async () => {
-  if (!roomCode) return;
-  const invite = new URL(window.location.pathname, window.location.origin);
-  invite.searchParams.set("room", roomCode);
-  const copied = await copyTextToClipboard(invite.href);
-  setMessage(hostStatusMsg, copied ? "Invite link copied. Send it to your friend!"
-    : "Couldn't copy the link. Share the room code instead.", !copied);
-});
-
 if (menuCopyCodeBtn) {
   menuCopyCodeBtn.addEventListener("click", async () => {
-    if (!roomCode) {
-      setMessage(hostStatusMsg, "No room code to copy.", true);
-      return;
-    }
-    const copied = await copyTextToClipboard(roomCode);
-    if (copied) {
-      setMessage(hostStatusMsg, "Code copied to clipboard!");
-      return;
-    }
-    setMessage(hostStatusMsg, "Failed to copy code.", true);
+    if (!roomCode) return;
+    const copiedRoom = roomCode;
+    const copied = await copyTextToClipboard(copiedRoom);
+    if (roomCode !== copiedRoom) return;
+    menuCopyCodeBtn.classList.toggle("copied", copied);
+    setMessage(roomCopyStatusEl, copied ? "Copied!" : "Couldn't copy. Select the code to copy it.", !copied);
   });
 }
 
@@ -1202,7 +1220,7 @@ if (menuPlayBtn) {
 
 if (menuLevelBackBtn) {
   menuLevelBackBtn.addEventListener("click", () => {
-    showMenuScreen("main");
+    showMenuScreen(roomCode ? "host" : "main");
   });
 }
 
@@ -1337,6 +1355,15 @@ socket.on("game-started", (payload = {}) => {
   state.started = true;
   clearPendingMenuAction();
   closeMenu();
+});
+
+socket.on("room-level", (payload = {}) => {
+  if (payload.roomCode !== roomCode || !payload.world) return;
+  world = payload.world;
+  camera.x = 0;
+  camera.y = 0;
+  state.movingPlatforms = world.movingPlatforms || [];
+  updateSelectedLevelLabel();
 });
 
 socket.on("state", (nextState = {}) => {
