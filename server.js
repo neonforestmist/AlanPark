@@ -783,9 +783,9 @@ function resetPlayer(player, world) {
   player.input.jump = false;
 }
 
-function resetRound(room, carry) {
+function resetRound(room, carry, keepCheckpoint) {
   clearRestartVotes(room);
-  room.game = Game.createGameState(room.world, carry || null);
+  room.game = Game.createGameState(room.world, carry || null, keepCheckpoint ? room.game : null);
   room.gameOverAt = 0;
   room.sharedTetherMidAirJumpCount = 0;
   for (const socketId of room.slots) {
@@ -797,6 +797,7 @@ function resetRound(room, carry) {
       resetPlayer(player, room.world);
     }
   }
+  Game.moveToCheckpoint(room.game, getPlayables(room), Date.now());
   room.status = getActivePlayerCount(room) === 2 ? "playing" : "waiting";
   room.winnerAt = 0;
 }
@@ -2209,7 +2210,7 @@ const gameLoop = setInterval(() => {
     if (room.status !== "reconnecting") updateMovingPlatforms(world, DT);
 
     if (room.status === "gameover" && Date.now() - room.gameOverAt > 4500) {
-      resetRound(room);
+      resetRound(room, null, true);
     }
 
     if (room.status === "playing") {

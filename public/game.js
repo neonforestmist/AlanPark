@@ -1900,9 +1900,10 @@ function drawWorld() {
   drawStaticEntities(now);
   drawEnemies(now);
   for (const player of players) {
-    // Blink while invulnerable after taking a hit.
-    if (player.inv && Math.floor(now / 80) % 2 === 0) continue;
+    // Flicker while invulnerable after taking a hit, without ever vanishing.
+    ctx.globalAlpha = player.inv && Math.floor(now / 80) % 2 === 0 ? 0.35 : 1;
     drawPlayerSprite(player, now);
+    ctx.globalAlpha = 1;
   }
   drawEffects(now);
 
@@ -2279,7 +2280,12 @@ function drawOverlays() {
     ctx.font = `${Math.round(40 * scale)}px ${PIXEL_FONT}`;
     drawOutlinedText("GAME OVER", width / 2, height / 2 - 10, "#ff6b6b");
     ctx.font = `${Math.round(12 * scale)}px ${PIXEL_FONT}`;
-    drawOutlinedText("Restarting the level...", width / 2, height / 2 + 34, "#ffffff");
+    drawOutlinedText(
+      String(state.cps || "").includes("1") ? "Continuing from the checkpoint..." : "Restarting the level...",
+      width / 2,
+      height / 2 + 34,
+      "#ffffff"
+    );
   } else if (state.status === "won") {
     ctx.font = `${Math.round(14 * scale)}px ${PIXEL_FONT}`;
     if (lastWinBonus > 0) {

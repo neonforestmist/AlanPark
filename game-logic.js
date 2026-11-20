@@ -60,7 +60,7 @@ function refreshFlags(game) {
   game.cpStr = game.checkpoints.map((checkpoint) => (checkpoint.on ? "1" : "0")).join("");
 }
 
-function createGameState(world, carry) {
+function createGameState(world, carry, previous) {
   const ts = world.tileSize;
   const game = {
     score: carry ? carry.score : 0,
@@ -104,8 +104,24 @@ function createGameState(world, carry) {
       }
     }
   }
+  // After a game over the team continues from the last checkpoint it reached.
+  if (previous && previous.checkpoint) {
+    previous.checkpoints.forEach((checkpoint, index) => {
+      if (checkpoint.on && game.checkpoints[index]) game.checkpoints[index].on = true;
+    });
+    game.checkpoint = game.checkpoints[previous.checkpoints.indexOf(previous.checkpoint)] || null;
+  }
   refreshFlags(game);
   return game;
+}
+
+function moveToCheckpoint(game, players, now) {
+  if (!game || !game.checkpoint) return;
+  for (const player of players) {
+    player.x = game.checkpoint.x;
+    player.y = game.checkpoint.y;
+    player.invulnUntil = now + INVULN_MS;
+  }
 }
 
 function isSolidTile(world, column, row) {
@@ -424,6 +440,7 @@ module.exports = {
   normalizeTimeLimit,
   normalizeEntityRows,
   createGameState,
+  moveToCheckpoint,
   step,
   awardWinBonus,
   serializeGame,
