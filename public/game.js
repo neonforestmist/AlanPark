@@ -1865,7 +1865,11 @@ function drawWorld() {
 
   ctx.save();
   ctx.scale(worldScale, worldScale);
-  ctx.translate(-camera.x, -camera.y + worldRenderOffsetY);
+  const shake = !reduceMotion && Date.now() < shakeUntil ? 10 : 0;
+  ctx.translate(
+    -camera.x + (Math.random() - 0.5) * shake,
+    -camera.y + worldRenderOffsetY + (Math.random() - 0.5) * shake
+  );
   ctx.imageSmoothingEnabled = false;
 
   drawSolidTiles();
@@ -1954,6 +1958,11 @@ const effects = [];
 let lastMusicKey = "";
 let lastLocalVy = 0;
 let lastWinBonus = 0;
+let introWorldName = "";
+let introStart = 0;
+let shakeUntil = 0;
+const reduceMotion =
+  typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function getThemeName() {
   return world && THEME_INFO[world.theme] ? world.theme : "grass";
@@ -2191,6 +2200,7 @@ function handleFx(payload = {}) {
   } else if (type === "checkpoint") {
     pushTextEffect("CHECKPOINT!", x, y, "#7dd3ff", 1400);
   } else if (type === "hurt" || type === "die") {
+    shakeUntil = Date.now() + 260;
     pushTextEffect(type === "hurt" ? "OUCH!" : "-1 LIFE", x, y, "#ff6b6b", 1000);
   } else if (type === "win") {
     lastWinBonus = Number(payload.bonus) || 0;
@@ -2278,6 +2288,26 @@ function drawOverlays() {
   const height = window.innerHeight;
   const scale = clamp(width / 960, 0.5, 1);
   ctx.textAlign = "center";
+  if (state.status === "playing") {
+    // Title card when a new level begins.
+    if (world.name !== introWorldName) {
+      introWorldName = world.name;
+      introStart = Date.now();
+    }
+    const elapsed = Date.now() - introStart;
+    if (elapsed < 2600) {
+      const top = Math.round(height * 0.26);
+      ctx.globalAlpha = elapsed > 2000 ? 1 - (elapsed - 2000) / 600 : 1;
+      ctx.fillStyle = "rgba(10, 12, 30, 0.6)";
+      ctx.fillRect(0, top, width, Math.round(120 * scale));
+      ctx.font = `${Math.round(28 * scale)}px ${PIXEL_FONT}`;
+      drawOutlinedText(`WORLD ${getWorldLabel()}`, width / 2, top + Math.round(56 * scale), "#ffd23f");
+      ctx.font = `${Math.round(14 * scale)}px ${PIXEL_FONT}`;
+      const title = String(world.name).replace(/^\d+-\d+\s*/, "").toUpperCase();
+      drawOutlinedText(title, width / 2, top + Math.round(92 * scale), "#ffffff");
+      ctx.globalAlpha = 1;
+    }
+  }
   if (state.status === "gameover") {
     ctx.fillStyle = "rgba(10, 6, 20, 0.72)";
     ctx.fillRect(0, HUD_BAR_HEIGHT, width, height - HUD_BAR_HEIGHT);
