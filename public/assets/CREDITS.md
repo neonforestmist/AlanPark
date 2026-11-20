@@ -31,8 +31,16 @@ Jingles and sound effects - "512 Sound Effects (8-bit style)", https://opengamea
 Synthesized fallback sounds in `public/audio.js` are original code (no third-party audio).
 
 ## sprites
-All files below are **generated** (original procedural pixel art drawn with Python + Pillow for this project, no third-party
-assets included, released under CC0 1.0):
-- `enemies/{walker,beetle,flyer,spiky,jumper,ghost,popper}_1.png` / `_2.png` - generated
-- `items/coin_1.png`..`coin_4.png`, `items/heart.png`, `items/spikes.png`, `items/checkpoint.png`, `items/checkpoint_on.png` - generated
+
+Enemy and item sprites come from **Pixel Platformer (1.2) by Kenney** (www.kenney.nl), license **CC0 1.0**,
+https://kenney.nl/assets/pixel-platformer. Tiles were cropped from the pack's tilemaps and upscaled with
+nearest-neighbour filtering:
+
+- `enemies/{walker,beetle,flyer,spiky,jumper,ghost,popper}_1.png` / `_2.png` <- `tilemap-characters_packed.png` tiles 21/22, 18/19, 24/25, 15/16, 13/14, 8, 11/12
+- `items/coin_1.png`..`coin_4.png` <- `tilemap_packed.png` tiles 151/152
+- `items/heart.png` <- tile 44, `items/spikes.png` <- tile 68, `items/checkpoint.png` / `checkpoint_on.png` <- tiles 111/112
+
+The themed world art is **generated** (original procedural pixel art drawn with Python + Pillow for this project, no
+third-party assets included, released under CC0 1.0):
+
 - `themes/{desert,cave,snow,castle,night}/block.png`, `block2.png`, `bg.png` - generated
