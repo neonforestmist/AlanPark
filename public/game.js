@@ -2272,6 +2272,33 @@ function drawHud() {
     ctx.fillStyle = label === "TIME" && (game.time || 0) <= 30 ? "#ff6b6b" : "#ffffff";
     ctx.fillText(value, x, 43);
   });
+
+  // Host-only tether length control, just under the HUD bar.
+  if (roomCode && isHost && state.status === "playing") {
+    const y = HUD_BAR_HEIGHT + 24;
+    const gap = 14;
+    const label = `TETHER ${getCurrentTetherLength()}`;
+    ctx.font = `${Math.round(11 * scale)}px ${PIXEL_FONT}`;
+    ctx.textAlign = "left";
+    const minusWidth = ctx.measureText("-").width;
+    const labelWidth = ctx.measureText(label).width;
+    const plusWidth = ctx.measureText("+").width;
+    const minusX = Math.round(width / 2 - (minusWidth + labelWidth + plusWidth + gap * 2) / 2);
+    const labelX = minusX + minusWidth + gap;
+    const plusX = labelX + labelWidth + gap;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#1b1b2f";
+    for (const [text, x, color] of [["-", minusX, "#ffd23f"], [label, labelX, "#ffffff"], ["+", plusX, "#ffd23f"]]) {
+      ctx.strokeText(text, x, y);
+      ctx.fillStyle = color;
+      ctx.fillText(text, x, y);
+    }
+    tetherAdjustHitboxes.minus = { x: minusX - 12, y: y - 24, width: minusWidth + 24, height: 36 };
+    tetherAdjustHitboxes.plus = { x: plusX - 12, y: y - 24, width: plusWidth + 24, height: 36 };
+  } else {
+    tetherAdjustHitboxes.minus = null;
+    tetherAdjustHitboxes.plus = null;
+  }
   ctx.textAlign = "left";
 }
 
