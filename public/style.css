@@ -123,7 +123,7 @@ body.menu-open #hud { display: none; }
 }
 
 /* ---------- Connection toast ---------- */
-#hud .hint { max-width: 30ch; }
+#hud .hint { max-width: 30ch; white-space: normal; overflow: visible; }
 #connection-status {
   position: fixed;
   left: 50%;
@@ -486,6 +486,45 @@ input[type="range"]::-moz-range-thumb { width: 16px; height: 24px; border-radius
   .level-list { max-height: 46vh; }
   #menu-logo { font-size: clamp(26px, 9vh, 48px); flex-direction: row; gap: 0.5em; }
 }
+/* ---------- Cards always fit the viewport and scroll inside themselves ---------- */
+.menu-card { max-height: calc(100vh - 116px); max-height: calc(100dvh - 116px); overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--brick) var(--paper); }
+.menu-card > * { flex-shrink: 0; }
+.menu-card > .level-list { flex: 0 1 auto; min-height: 96px; }
+@media (max-width: 480px) {
+  .menu-card { max-height: calc(100vh - 98px); max-height: calc(100dvh - 98px); }
+}
+@media (max-height: 520px) {
+  #menu-overlay { padding: 10px 12px; }
+  #menu-overlay.home-mode { padding-top: 22px; padding-bottom: 60px; }
+  .menu-home { width: min(calc(100% - 120px), 980px); }
+  #menu-overlay.pause-mode { padding-bottom: 10px; }
+  .menu-card { width: min(calc(100% - 120px), 640px); max-height: calc(100vh - 20px); max-height: calc(100dvh - 20px); padding: 12px; gap: 8px; }
+  .menu-card h2 { font-size: 11px; padding: 7px 10px; }
+  .menu-card p { font-size: 13px; }
+  .menu-card button { padding: 9px 12px; }
+  .menu-actions { margin-top: 2px; gap: 10px; }
+  .menu-actions.vertical { flex-direction: row; }
+  .menu-actions.vertical > button { flex: 1 1 40%; width: auto; }
+  .level-list { max-height: none; }
+  .room-copy-button { padding: 0; }
+  .menu-code { min-height: 48px; }
+  .room-copy-button { width: 48px; height: 48px; }
+}
+@media (max-height: 520px) and (min-width: 640px) {
+  .level-list { grid-template-columns: 1fr 1fr; }
+}
+
+/* ---------- Touch devices: HUD pill moves under the canvas HUD bar ---------- */
+@media (pointer: coarse), (max-height: 480px) {
+  #hud { top: 64px; bottom: auto; left: 8px; gap: 6px; padding: 4px 6px; max-width: calc(100vw - 84px); }
+  #hud .hint { display: none; }
+  #hud button { padding: 6px 8px; }
+  #status { max-width: 18ch; }
+  .top-banner { top: 128px; }
+  .top-banner.top-banner-below-clear { top: 204px; }
+  body:not(.menu-open) #connection-status { bottom: 124px; max-width: max(140px, calc(100vw - 250px)); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
