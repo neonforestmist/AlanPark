@@ -7,9 +7,14 @@ Music - "5 Chiptunes (Action)", https://opengameart.org/content/5-chiptunes-acti
 
 - `music/menu.mp3` <- https://opengameart.org/sites/default/files/title%20screen.mp3
 - `music/grass.mp3` <- https://opengameart.org/sites/default/files/level1.mp3
-- `music/desert.mp3`, `music/night.mp3` <- https://opengameart.org/sites/default/files/level2.mp3
-- `music/cave.mp3`, `music/castle.mp3` <- https://opengameart.org/sites/default/files/level3.mp3
+- `music/desert.mp3` <- https://opengameart.org/sites/default/files/level2.mp3
+- `music/cave.mp3` <- https://opengameart.org/sites/default/files/level3.mp3
 - `music/snow.mp3` <- https://opengameart.org/sites/default/files/ending.mp3
+
+Music - "4 Chiptunes (Adventure)" by Juhani Junkala (SubspaceAudio), license CC0 1.0, https://opengameart.org/content/4-chiptunes-adventure
+
+- `music/castle.mp3` <- "3. Boss Fight" (full loop), https://opengameart.org/sites/default/files/Juhani%20Junkala%20%5BChiptune%20Adventures%5D%203.%20Boss%20Fight.ogg
+- `music/night.mp3` <- "2. Stage 2" (full loop), https://opengameart.org/sites/default/files/Juhani%20Junkala%20%5BChiptune%20Adventures%5D%202.%20Stage%202.ogg
 
 Jingles and sound effects - "512 Sound Effects (8-bit style)", https://opengameart.org/content/512-sound-effects-8-bit-style
 (https://opengameart.org/sites/default/files/The%20Essential%20Retro%20Video%20Game%20Sound%20Effects%20Collection%20%5B512%20sounds%5D.zip)

@@ -9,6 +9,8 @@
   var BASE = 'assets/audio/';
   var FADE_MS = 350;
   var SFX_THROTTLE_MS = 40;
+  // per-track loudness trim: these two source tracks are mastered ~4 dB quieter than the rest
+  var MUSIC_TRIM = { castle: 1.5, night: 1.5 };
 
   var MUSIC_NAMES = ['menu', 'grass', 'desert', 'cave', 'snow', 'castle', 'night', 'win', 'gameover'];
   var ONE_SHOT = { win: true, gameover: true };
@@ -335,7 +337,7 @@
       var p = el.play();
       var ok = function () {
         if (tr.dead) { try { el.pause(); } catch (e) {} return; }
-        if (!tr.started) { tr.started = true; fadeEl(el, MUSIC_VOL, 200); }
+        if (!tr.started) { tr.started = true; fadeEl(el, Math.min(1, MUSIC_VOL * (MUSIC_TRIM.hasOwnProperty(tr.name) ? MUSIC_TRIM[tr.name] : 1)), 200); }
       };
       if (p && p.then) {
         p.then(ok).catch(function (err) {
