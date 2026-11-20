@@ -1618,7 +1618,11 @@ function drawPlayerSprite(player, now) {
   const localFallback = player.id === myId ? getStoredCustomName() : "";
   const displayName = serverName || localFallback || style.name;
 
-  const textY = player.y - 8;
+  // Lift the second label when both players stand close enough for the names to overlap.
+  const other = (state.players || []).find((entry) => entry.id !== player.id);
+  const labelsCollide =
+    other && player.slot > other.slot && Math.abs(other.x - player.x) < 120 && Math.abs(other.y - player.y) < 24;
+  const textY = player.y - 8 - (labelsCollide ? 16 : 0);
   if (state.hostId === player.id) {
     const hostTag = "(Host) ";
     const hostTagWidth = ctx.measureText(hostTag).width;
