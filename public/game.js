@@ -413,6 +413,7 @@ function normalizeLevelEntry(entry) {
     name: name.replace(/\.json$/i, ""),
     rows: Math.max(0, Number(entry.rows) || 0),
     cols: Math.max(0, Number(entry.cols) || 0),
+    theme: typeof entry.theme === "string" ? entry.theme : "grass",
   };
 }
 
@@ -504,9 +505,7 @@ function renderLevelList(levels) {
 
     const metaEl = document.createElement("span");
     metaEl.className = "level-list-meta";
-    metaEl.textContent = level.rows > level.cols
-      ? "Climb toward the canopy"
-      : "Find your way through the forest";
+    metaEl.textContent = describeLevel(level);
 
     const arrowEl = document.createElement("span");
     arrowEl.className = "level-list-arrow";
@@ -785,6 +784,10 @@ function clearLocalRoomState() {
     spectators: 0,
     restartVotes: { voted: 0, required: 0 },
     movingPlatforms: [],
+    enemies: [],
+    game: null,
+    taken: "",
+    cps: "",
     serverTime: Date.now(),
   };
   facingByPlayerId.clear();
@@ -1407,6 +1410,8 @@ socket.on("state", (nextState = {}) => {
   updateHostCodeUi();
   updateStatusText();
   updateResetVoteBanner();
+  syncMusic();
+  trackLocalJump();
 });
 
 socket.on("settings", (nextSettings = {}) => {
@@ -1495,14 +1500,15 @@ function getSpriteForPlayer(player, now) {
 
 function drawBackground(width, height) {
   const sky = ctx.createLinearGradient(0, 0, 0, height);
-  sky.addColorStop(0, "#7fc8f8");
-  sky.addColorStop(0.65, "#8fd2b8");
-  sky.addColorStop(1, "#5a8f5a");
+  const themeInfo = getThemeInfo();
+  sky.addColorStop(0, themeInfo.sky[0]);
+  sky.addColorStop(0.65, themeInfo.sky[1]);
+  sky.addColorStop(1, themeInfo.sky[2]);
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, width, height);
 
-  const bg = assets.background;
-  if (!bg.loaded) {
+  const bg = getThemeBackground();
+  if (!bg || !bg.loaded) {
     return;
   }
 
@@ -1665,9 +1671,13 @@ function drawSolidTiles() {
 
       const drawX = x * tileSize;
       const drawY = y * tileSize;
-      const blockAsset = symbol === "b" ? assets.block2 : assets.block;
+      const blockAsset = getThemedBlock(symbol);
       if (blockAsset.loaded) {
         ctx.drawImage(blockAsset.image, drawX, drawY, tileSize, tileSize);
+        if (blockAsset.tint) {
+          ctx.fillStyle = blockAsset.tint;
+          ctx.fillRect(drawX, drawY, tileSize, tileSize);
+        }
       } else {
         ctx.fillStyle = symbol === "b" ? "#4d6b52" : "#5c4033";
         ctx.fillRect(drawX, drawY, tileSize, tileSize);
@@ -1887,71 +1897,447 @@ function drawWorld() {
   }
 
   const now = Date.now();
+  drawStaticEntities(now);
+  drawEnemies(now);
   for (const player of players) {
+    // Blink while invulnerable after taking a hit.
+    if (player.inv && Math.floor(now / 80) % 2 === 0) continue;
     drawPlayerSprite(player, now);
   }
+  drawEffects(now);
 
   drawWaterTiles();
 
   ctx.restore();
 
-  const topBarHeight = 44;
-  const textY = Math.round(topBarHeight * 0.58);
-  ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-  ctx.fillRect(0, 0, window.innerWidth, topBarHeight);
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "14px 'Press Start 2P'";
-  ctx.textAlign = "left";
-  ctx.fillText(`Players: ${players.length}/2`, 18, textY);
-  
-  const tetherText = `Tether: ${getCurrentTetherLength()}px`;
-  if (roomCode && isHost) {
-    const minusText = "-";
-    const plusText = "+";
-    const gap = 16;
-    const minusWidth = ctx.measureText(minusText).width;
-    const tetherWidth = ctx.measureText(tetherText).width;
-    const plusWidth = ctx.measureText(plusText).width;
-    const totalWidth = minusWidth + gap + tetherWidth + gap + plusWidth;
-    const startX = Math.round(window.innerWidth * 0.5 - totalWidth * 0.5);
-    const minusX = startX;
-    const tetherX = minusX + minusWidth + gap;
-    const plusX = tetherX + tetherWidth + gap;
+  drawHud();
+  drawOverlays();
+}
 
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#f5f5f5";
-    ctx.fillText(minusText, minusX, textY);
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText(tetherText, tetherX, textY);
-    ctx.fillStyle = "#f5f5f5";
-    ctx.fillText(plusText, plusX, textY);
+// --- Themes, entities, HUD and effects ------------------------------------
 
-    const hitTop = 6;
-    const hitBottom = topBarHeight - 6;
-    tetherAdjustHitboxes.minus = {
-      x: minusX - 6,
-      y: hitTop,
-      width: minusWidth + 12,
-      height: hitBottom - hitTop,
+const THEME_INFO = {
+  grass: { sky: ["#7fc8f8", "#8fd2b8", "#5a8f5a"], tint: null, blurb: "Find your way through the forest" },
+  desert: { sky: ["#fbd38d", "#f6ad55", "#c0803a"], tint: "rgba(236, 170, 70, 0.42)", blurb: "Cross the scorching dunes" },
+  cave: { sky: ["#1f1b2e", "#2c2540", "#141021"], tint: "rgba(60, 50, 110, 0.5)", blurb: "Delve into the crystal caves" },
+  snow: { sky: ["#bfe3ff", "#e3f3ff", "#ffffff"], tint: "rgba(215, 235, 255, 0.55)", blurb: "Slide across the frozen peaks" },
+  castle: { sky: ["#3b1d24", "#5a2328", "#1c0f14"], tint: "rgba(90, 90, 100, 0.55)", blurb: "Storm the haunted castle" },
+  night: { sky: ["#0b1033", "#1b2a6b", "#32205e"], tint: "rgba(40, 50, 130, 0.45)", blurb: "Race beneath the stars" },
+};
+const ENEMY_SPRITE_NAMES = { g: "walker", k: "beetle", f: "flyer", s: "spiky", j: "jumper", x: "ghost", p: "popper" };
+const ENEMY_SIZES = { g: [48, 44], k: [52, 40], f: [48, 36], s: [48, 44], j: [44, 44], x: [48, 48], p: [44, 60] };
+const ENEMY_FALLBACK_COLORS = { g: "#a8672d", k: "#2f7fd1", f: "#8e5bd6", s: "#d64545", j: "#3fae54", x: "#f4f6ff", p: "#d6336c" };
+const HUD_BAR_HEIGHT = 56;
+const PIXEL_FONT = "'Press Start 2P', monospace";
+
+const enemySprites = {};
+for (const [symbol, name] of Object.entries(ENEMY_SPRITE_NAMES)) {
+  enemySprites[symbol] = [
+    loadImage(`assets/enemies/${name}_1.png`),
+    loadImage(`assets/enemies/${name}_2.png`),
+  ];
+}
+const itemSprites = {
+  coin: [1, 2, 3, 4].map((frameNumber) => loadImage(`assets/items/coin_${frameNumber}.png`)),
+  heart: loadImage("assets/items/heart.png"),
+  spikes: loadImage("assets/items/spikes.png"),
+  checkpoint: loadImage("assets/items/checkpoint.png"),
+  checkpointOn: loadImage("assets/items/checkpoint_on.png"),
+};
+const themeAssetCache = {};
+const effects = [];
+let lastMusicKey = "";
+let lastLocalVy = 0;
+let lastWinBonus = 0;
+
+function getThemeName() {
+  return world && THEME_INFO[world.theme] ? world.theme : "grass";
+}
+
+function getThemeInfo() {
+  return THEME_INFO[getThemeName()];
+}
+
+function getThemeAssets(theme) {
+  if (!themeAssetCache[theme]) {
+    themeAssetCache[theme] = {
+      block: loadImage(`assets/themes/${theme}/block.png`),
+      block2: loadImage(`assets/themes/${theme}/block2.png`),
+      bg: loadImage(`assets/themes/${theme}/bg.png`),
     };
-    tetherAdjustHitboxes.plus = {
-      x: plusX - 6,
-      y: hitTop,
-      width: plusWidth + 12,
-      height: hitBottom - hitTop,
-    };
-  } else {
-    tetherAdjustHitboxes.minus = null;
-    tetherAdjustHitboxes.plus = null;
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText(tetherText, window.innerWidth / 2, textY);
+  }
+  return themeAssetCache[theme];
+}
+
+// Falls back to the forest block with a theme tint until themed art loads.
+function getThemedBlock(symbol) {
+  const theme = getThemeName();
+  const base = symbol === "b" ? assets.block2 : assets.block;
+  base.tint = null;
+  if (theme === "grass") return base;
+  const themed = getThemeAssets(theme);
+  const asset = symbol === "b" ? themed.block2 : themed.block;
+  if (asset.loaded) return asset;
+  base.tint = THEME_INFO[theme].tint;
+  return base;
+}
+
+function getThemeBackground() {
+  const theme = getThemeName();
+  if (theme === "grass") return assets.background;
+  const bg = getThemeAssets(theme).bg;
+  return bg.loaded ? bg : null;
+}
+
+function describeLevel(level) {
+  const info = THEME_INFO[level.theme] || THEME_INFO.grass;
+  return level.rows > level.cols ? "Climb toward the summit" : info.blurb;
+}
+
+// Pickup/checkpoint order must match the server's row-major scan so the
+// `taken`/`cps` flag strings line up by index.
+function getStaticEntities() {
+  if (!world) return null;
+  if (world.staticEntities) return world.staticEntities;
+  const ts = Number(world.tileSize) || 64;
+  const result = { pickups: [], spikes: [], checkpoints: [] };
+  const rows = Array.isArray(world.entities) ? world.entities : [];
+  for (let y = 0; y < rows.length; y += 1) {
+    const row = rows[y] || "";
+    for (let x = 0; x < row.length; x += 1) {
+      const symbol = row[x];
+      if (symbol === "o" || symbol === "m") result.pickups.push({ kind: symbol, x: x * ts, y: y * ts });
+      else if (symbol === "^") result.spikes.push({ x: x * ts, y: y * ts });
+      else if (symbol === "c") result.checkpoints.push({ x: x * ts, y: y * ts });
+    }
+  }
+  world.staticEntities = result;
+  return result;
+}
+
+function drawSpriteOrFallback(asset, x, y, size, fallback) {
+  if (asset && asset.loaded) {
+    ctx.drawImage(asset.image, x, y, size, size);
+    return;
+  }
+  fallback();
+}
+
+function drawStaticEntities(now) {
+  const ents = getStaticEntities();
+  if (!ents) return;
+  const ts = Number(world.tileSize) || 64;
+  const minX = camera.x - ts * 2;
+  const maxX = camera.x + window.innerWidth + ts * 2;
+  const taken = typeof state.taken === "string" ? state.taken : "";
+  const cps = typeof state.cps === "string" ? state.cps : "";
+
+  for (const spike of ents.spikes) {
+    if (spike.x < minX || spike.x > maxX) continue;
+    drawSpriteOrFallback(itemSprites.spikes, spike.x, spike.y, ts, () => {
+      ctx.fillStyle = "#d9dee8";
+      for (let i = 0; i < 4; i += 1) {
+        const sx = spike.x + (i * ts) / 4;
+        ctx.beginPath();
+        ctx.moveTo(sx, spike.y + ts);
+        ctx.lineTo(sx + ts / 8, spike.y + ts * 0.55);
+        ctx.lineTo(sx + ts / 4, spike.y + ts);
+        ctx.closePath();
+        ctx.fill();
+      }
+    });
   }
 
-  ctx.textAlign = "right";
+  ents.checkpoints.forEach((checkpoint, index) => {
+    if (checkpoint.x < minX || checkpoint.x > maxX) return;
+    const on = cps[index] === "1";
+    drawSpriteOrFallback(on ? itemSprites.checkpointOn : itemSprites.checkpoint, checkpoint.x, checkpoint.y, ts, () => {
+      ctx.fillStyle = "#f5f5f5";
+      ctx.fillRect(checkpoint.x + ts * 0.45, checkpoint.y + ts * 0.1, ts * 0.08, ts * 0.9);
+      ctx.fillStyle = on ? "#3ddc97" : "#9aa3b2";
+      ctx.beginPath();
+      ctx.moveTo(checkpoint.x + ts * 0.53, checkpoint.y + ts * 0.12);
+      ctx.lineTo(checkpoint.x + ts * 0.95, checkpoint.y + ts * 0.28);
+      ctx.lineTo(checkpoint.x + ts * 0.53, checkpoint.y + ts * 0.46);
+      ctx.closePath();
+      ctx.fill();
+    });
+  });
+
+  ents.pickups.forEach((pickup, index) => {
+    if (taken[index] === "1" || pickup.x < minX || pickup.x > maxX) return;
+    const bob = Math.sin(now * 0.005 + pickup.x * 0.01) * 4;
+    const size = ts * 0.6;
+    const px = pickup.x + ts * 0.2;
+    const py = pickup.y + ts * 0.2 + bob;
+    if (pickup.kind === "m") {
+      drawSpriteOrFallback(itemSprites.heart, px, py, size, () => {
+        ctx.fillStyle = "#ff4d6d";
+        ctx.fillRect(px + size * 0.1, py + size * 0.2, size * 0.8, size * 0.4);
+        ctx.fillRect(px + size * 0.3, py + size * 0.6, size * 0.4, size * 0.25);
+      });
+      return;
+    }
+    const frameIndex = Math.floor(now / 110) % 4;
+    const frame = itemSprites.coin[frameIndex].loaded ? itemSprites.coin[frameIndex] : itemSprites.coin[0];
+    drawSpriteOrFallback(frame, px, py, size, () => {
+      const squash = [1, 0.65, 0.2, 0.65][frameIndex];
+      ctx.fillStyle = "#ffd23f";
+      ctx.fillRect(px + (size * (1 - squash)) / 2, py, size * squash, size);
+      ctx.fillStyle = "#b8860b";
+      ctx.fillRect(px + (size * (1 - squash * 0.4)) / 2, py + size * 0.2, size * squash * 0.4, size * 0.6);
+    });
+  });
+}
+
+function drawFallbackEnemy(type, x, y, w, h, dir, now) {
+  const stepFrame = Math.floor(now / 220) % 2;
+  ctx.fillStyle = ENEMY_FALLBACK_COLORS[type] || "#888888";
+  ctx.fillRect(x, y + 6, w, h - 14);
+  ctx.fillRect(x + 6, y, w - 12, 8);
+  if (type === "s") {
+    ctx.fillStyle = "#ffffff";
+    for (let i = 0; i < 4; i += 1) {
+      ctx.fillRect(x + 4 + i * (w / 4), y - 8, 6, 10);
+    }
+  }
+  if (type === "f") {
+    ctx.fillStyle = "#d9c8ff";
+    ctx.fillRect(x - 10, y + 4 + stepFrame * 6, 12, 8);
+    ctx.fillRect(x + w - 2, y + 4 + stepFrame * 6, 12, 8);
+  }
+  if (type !== "f" && type !== "x" && type !== "p") {
+    ctx.fillStyle = "#3b2314";
+    ctx.fillRect(x + 4 + stepFrame * 4, y + h - 8, 14, 8);
+    ctx.fillRect(x + w - 18 - stepFrame * 4, y + h - 8, 14, 8);
+  }
+  const eyeX = dir > 0 ? x + w * 0.5 : x + w * 0.12;
+  const pupil = dir > 0 ? 4 : 0;
   ctx.fillStyle = "#ffffff";
-  ctx.fillText(`Room Code: ${roomCode || "-----"}`, window.innerWidth - 18, textY);
+  ctx.fillRect(eyeX, y + 12, 8, 10);
+  ctx.fillRect(eyeX + 12, y + 12, 8, 10);
+  ctx.fillStyle = "#111111";
+  ctx.fillRect(eyeX + pupil, y + 16, 4, 6);
+  ctx.fillRect(eyeX + 12 + pupil, y + 16, 4, 6);
+}
+
+function drawEnemies(now) {
+  const list = Array.isArray(state.enemies) ? state.enemies : [];
+  for (const entry of list) {
+    if (!Array.isArray(entry)) continue;
+    const [, type, x, y, dir, groundY] = entry;
+    const size = ENEMY_SIZES[type];
+    if (!size) continue;
+    const frames = enemySprites[type];
+    const frame = frames[Math.floor(now / 220) % 2];
+    const sprite = frame.loaded ? frame : frames[0];
+    ctx.save();
+    if (type === "p") {
+      // Poppers hide inside the ground: clip everything below the ground line.
+      ctx.beginPath();
+      ctx.rect(x - 20, y - 90, size[0] + 40, groundY - (y - 90));
+      ctx.clip();
+    }
+    if (type === "x") ctx.globalAlpha = 0.85;
+    if (sprite.loaded) {
+      const drawSize = Math.max(size[0], size[1]) + 8;
+      const drawX = x + size[0] / 2 - drawSize / 2;
+      const drawY = y + size[1] - drawSize;
+      if (dir > 0) {
+        ctx.translate(drawX + drawSize / 2, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(sprite.image, -drawSize / 2, drawY, drawSize, drawSize);
+      } else {
+        ctx.drawImage(sprite.image, drawX, drawY, drawSize, drawSize);
+      }
+    } else {
+      drawFallbackEnemy(type, x, y, size[0], size[1], dir, now);
+    }
+    ctx.restore();
+  }
+}
+
+function playSfx(name) {
+  try {
+    if (window.GameAudio) window.GameAudio.sfx(name);
+  } catch (_error) {
+    // Audio is optional.
+  }
+}
+
+function pushTextEffect(text, x, y, color, life = 800) {
+  effects.push({ kind: "text", text, x, y, color, life, start: Date.now() });
+}
+
+function handleFx(payload = {}) {
+  const type = payload.t;
+  if (["coin", "stomp", "hurt", "die", "checkpoint", "heart", "win", "gameover"].includes(type)) {
+    playSfx(type);
+  }
+  const x = Number(payload.x) || 0;
+  const y = Number(payload.y) || 0;
+  if (type === "stomp") {
+    pushTextEffect(String(payload.pts || 100), x, y, "#ffffff");
+    effects.push({ kind: "puff", x, y: y + 20, life: 300, start: Date.now() });
+  } else if (type === "coin") {
+    pushTextEffect("+50", x, y, "#ffd23f", 600);
+  } else if (type === "heart") {
+    pushTextEffect("1UP", x, y, "#7dff9b", 1200);
+  } else if (type === "checkpoint") {
+    pushTextEffect("CHECKPOINT!", x, y, "#7dd3ff", 1400);
+  } else if (type === "hurt" || type === "die") {
+    pushTextEffect(type === "hurt" ? "OUCH!" : "-1 LIFE", x, y, "#ff6b6b", 1000);
+  } else if (type === "win") {
+    lastWinBonus = Number(payload.bonus) || 0;
+  }
+  if (effects.length > 60) effects.splice(0, effects.length - 60);
+}
+
+socket.on("fx", handleFx);
+
+function drawEffects(now) {
+  for (let i = effects.length - 1; i >= 0; i -= 1) {
+    const effect = effects[i];
+    const progress = (now - effect.start) / effect.life;
+    if (progress >= 1) {
+      effects.splice(i, 1);
+      continue;
+    }
+    ctx.globalAlpha = 1 - progress * progress;
+    if (effect.kind === "text") {
+      const textY = effect.y - progress * 48;
+      ctx.font = `14px ${PIXEL_FONT}`;
+      ctx.textAlign = "center";
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "#1b1b2f";
+      ctx.strokeText(effect.text, effect.x, textY);
+      ctx.fillStyle = effect.color;
+      ctx.fillText(effect.text, effect.x, textY);
+    } else {
+      const radius = 10 + progress * 26;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(effect.x - radius, effect.y - 4, 8, 8);
+      ctx.fillRect(effect.x + radius - 8, effect.y - 4, 8, 8);
+      ctx.fillRect(effect.x - 4, effect.y - radius, 8, 8);
+    }
+  }
+  ctx.globalAlpha = 1;
   ctx.textAlign = "left";
+}
+
+function getWorldLabel() {
+  const name = world && world.name ? String(world.name) : "";
+  const match = name.match(/\d+-\d+/);
+  return match ? match[0] : name.split(" ")[0] || "1-1";
+}
+
+function drawHud() {
+  const width = window.innerWidth;
+  const scale = clamp(width / 960, 0.5, 1);
+  ctx.fillStyle = "rgba(12, 14, 34, 0.86)";
+  ctx.fillRect(0, 0, width, HUD_BAR_HEIGHT);
+  ctx.fillStyle = "#ffd23f";
+  ctx.fillRect(0, HUD_BAR_HEIGHT - 4, width, 4);
+
+  const game = state.game || {};
+  const columns = [
+    ["SCORE", String(game.score || 0).padStart(6, "0")],
+    ["COINS", `x${String(game.coins || 0).padStart(2, "0")}`],
+    ["WORLD", getWorldLabel()],
+    ["TIME", String(game.time || 0).padStart(3, "0")],
+    ["LIVES", `x${game.lives || 0}`],
+  ];
+  ctx.textAlign = "center";
+  columns.forEach(([label, value], index) => {
+    const x = (width * (index + 0.5)) / columns.length;
+    ctx.font = `${Math.round(10 * scale)}px ${PIXEL_FONT}`;
+    ctx.fillStyle = "#ffd23f";
+    ctx.fillText(label, x, 20);
+    ctx.font = `${Math.round(16 * scale)}px ${PIXEL_FONT}`;
+    ctx.fillStyle = label === "TIME" && (game.time || 0) <= 30 ? "#ff6b6b" : "#ffffff";
+    ctx.fillText(value, x, 43);
+  });
+  ctx.textAlign = "left";
+}
+
+function drawOutlinedText(text, x, y, color) {
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = "#1b1b2f";
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
+}
+
+function drawOverlays() {
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  const scale = clamp(width / 960, 0.5, 1);
+  ctx.textAlign = "center";
+  if (state.status === "gameover") {
+    ctx.fillStyle = "rgba(10, 6, 20, 0.72)";
+    ctx.fillRect(0, HUD_BAR_HEIGHT, width, height - HUD_BAR_HEIGHT);
+    ctx.font = `${Math.round(40 * scale)}px ${PIXEL_FONT}`;
+    drawOutlinedText("GAME OVER", width / 2, height / 2 - 10, "#ff6b6b");
+    ctx.font = `${Math.round(12 * scale)}px ${PIXEL_FONT}`;
+    drawOutlinedText("Restarting the level...", width / 2, height / 2 + 34, "#ffffff");
+  } else if (state.status === "won") {
+    ctx.font = `${Math.round(14 * scale)}px ${PIXEL_FONT}`;
+    if (lastWinBonus > 0) {
+      drawOutlinedText(`TIME BONUS +${lastWinBonus}`, width / 2, height / 2 - 24, "#ffd23f");
+    }
+    drawOutlinedText(
+      isHost ? "PRESS ENTER OR TAP FOR THE NEXT LEVEL" : "WAITING FOR THE HOST TO CONTINUE...",
+      width / 2,
+      height / 2 + 12,
+      "#ffffff"
+    );
+  }
+  ctx.textAlign = "left";
+}
+
+function requestNextLevel() {
+  if (!roomCode || !isHost || state.status !== "won" || !socket.connected) return;
+  socket.emit("next-level", {}, () => {});
+}
+
+function syncMusic() {
+  if (!window.GameAudio) return;
+  let key = "menu";
+  if (roomCode && state.started && world) {
+    key = state.status === "won" ? "win" : state.status === "gameover" ? "gameover" : getThemeName();
+  }
+  if (key === lastMusicKey) return;
+  lastMusicKey = key;
+  try {
+    window.GameAudio.playMusic(key);
+  } catch (_error) {
+    // Audio is optional.
+  }
+}
+
+function trackLocalJump() {
+  const me = getPlayerById(myId);
+  if (!me) return;
+  if (state.status === "playing" && input.jump && lastLocalVy > -300 && me.vy < -700) {
+    playSfx("jump");
+  }
+  lastLocalVy = me.vy;
+}
+
+window.addEventListener("keydown", (event) => {
+  if (menuOpen || !roomCode) return;
+  if (event.key === "Enter") {
+    requestNextLevel();
+  } else if ((event.key === "r" || event.key === "R") && mySlot !== null && mySlot !== -1) {
+    socket.emit("restart");
+  }
+});
+
+canvas.addEventListener("pointerdown", () => {
+  if (!menuOpen) requestNextLevel();
+});
+if (levelCompleteBannerEl) {
+  levelCompleteBannerEl.addEventListener("click", requestNextLevel);
 }
 
 function frame() {
@@ -1962,6 +2348,7 @@ function frame() {
 updateSelectedLevelLabel();
 void loadLevels();
 openMenu("main");
+syncMusic();
 const invitedCode = normalizeRoomCode(new URLSearchParams(window.location.search).get("room"));
 if (invitedCode.length === 5) {
   joinCodeInput.value = invitedCode;
