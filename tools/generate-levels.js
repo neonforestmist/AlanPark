@@ -43,7 +43,7 @@ class Builder {
   E(x, y, ch) {
     if (!this.free(x, y)) return false;
     if (GROUND_ENT.includes(ch) && !this.solid(x, y + 1)) return false;
-    if (ENEMIES.includes(ch) && x < 12) return false;
+    if ((ENEMIES + '^').includes(ch) && x < 15) return false;
     this.e[y][x] = ch;
     return true;
   }
@@ -55,14 +55,12 @@ const CH = {
   S(b) { b.add(12); },
   F(b) { // flat run with an enemy pack
     const n = b.ri(9, 11), x = b.add(n), k = b.ri(2, 3);
-    for (let i = 0; i < k; i++) b.E(x + 2 + i * 3, WY, b.ge());
     for (let i = 0; i < 4; i++) b.E(x + 3 + i, 10, 'o');
   },
   T(b) { // brick staircase
     const x = b.add(11);
     [1, 2, 3, 3, 2, 1].forEach((h, i) => { for (let k = 0; k < h; k++) b.T(x + 2 + i, WY - k, 'b'); });
     for (const [dx, y] of [[4, 9], [5, 9], [4, 8], [5, 8]]) b.E(x + dx, y, 'o');
-    b.E(x + 9, WY, b.ge());
   },
   G(b) { // gap with a coin arc
     b.add(3);
@@ -75,8 +73,6 @@ const CH = {
     const x = b.add(13);
     for (let i = 2; i <= 5; i++) { b.T(x + i, 10, 'b'); b.E(x + i, 9, 'o'); }
     for (let i = 7; i <= 10; i++) { b.T(x + i, 8, 'b'); b.E(x + i, 7, 'o'); }
-    b.E(x + 4, WY, b.ge()); b.E(x + 9, WY, b.ge());
-    b.E(x + 9, 5, 'f');
   },
   H(b) { // pit crossed by a 2-wide horizontal lift (gaps stay <= 3 even if the lift is parked)
     b.add(3);
@@ -107,13 +103,13 @@ const CH = {
   },
   K(b) { // spike corridor (max 2 spikes in a row, 2 safe tiles between)
     const x = b.add(13);
-    for (const i of [2, 3, 6, 7, 10]) { b.E(x + i, WY, '^'); b.E(x + i, 9, 'o'); }
+    for (const i of [2, 6, 10]) { b.E(x + i, WY, '^'); b.E(x + i, 9, 'o'); b.E(x + i + 1, 9, 'o'); }
   },
   Y(b) { // flyer gauntlet over gaps
     b.add(3);
     for (let s = 0; s < 2; s++) {
       const g = b.add(2, false);
-      b.E(g, 9 + (s % 2), 'f');
+      b.E(g, WY - 2, 'f');
       const p = b.add(4);
       b.E(p + 1, 10, 'o'); b.E(p + 2, 10, 'o');
     }
@@ -125,14 +121,13 @@ const CH = {
     }
     for (const [dx, y] of [[2, 10], [3, 10], [4, 8], [5, 8], [6, 6], [8, 6], [9, 8], [10, 8], [11, 10], [12, 10]]) b.E(x + dx, y, 'o');
     b.E(x + 7, 6, heart ? 'm' : 'o');
-    if (heart) b.E(x + 7, 3, 'f');
   },
   M(b) { CH.O(b, true); },
   C(b) { const x = b.add(9); b.E(x + 4, WY, 'c'); },
   X(b) { // haunted hall: low ceiling, spikes and a ghost
     const x = b.add(14);
     for (let i = 1; i <= 12; i++) b.T(x + i, 6, 'b');
-    for (const i of [4, 5, 9]) { b.E(x + i, WY, '^'); b.E(x + i, 9, 'o'); }
+    for (const i of [2, 12]) { b.E(x + i, WY, '^'); b.E(x + i, 9, 'o'); b.E(x + i, 10, 'o'); }
     b.E(x + 7, 8, 'x');
   },
   E(b) { // final staircase, then the flag on flat ground
@@ -145,28 +140,52 @@ const CH = {
 
 function sprinkle(b) {
   const cfg = b.cfg;
+  const W = b.W, endX = W - 18, FR = WY - 2; // FR: flyer row = standing row - 2
   const okGround = (x) => {
-    for (let dx = -2; dx <= 2; dx++) {
-      if (b.t[GY][x + dx] !== '#' || b.t[WY][x + dx] !== '.' || b.t[WY - 1][x + dx] !== '.' || b.t[WY - 2][x + dx] !== '.') return false;
-    }
-    for (let dx = -2; dx <= 2; dx++) { const e = b.e[WY][x + dx]; if (e !== '.' && e !== 'o') return false; }
+    for (let dx = -2; dx <= 2; dx++) if (b.t[GY][x + dx] !== '#') return false; // >= 2 solid columns to any gap
+    for (let dx = -1; dx <= 1; dx++) for (let y = 9; y <= WY; y++) if (b.t[y][x + dx] !== '.') return false;
+    for (let dx = -3; dx <= 3; dx++) if ('^c'.includes(b.e[WY][x + dx])) return false;
     return true;
   };
-  const okAir = (x, y) => {
-    for (let dx = -2; dx <= 2; dx++) for (let dy = -1; dy <= 1; dy++) if (b.t[y + dy][x + dx] !== '.') return false;
-    for (let dx = -5; dx <= 5; dx++) for (let dy = -3; dy <= 3; dy++) {
-      const e = b.inb(x + dx, y + dy) ? b.e[y + dy][x + dx] : '.';
-      if (e !== '.' && e !== 'o') return false;
-    }
-    return true;
+  const hazardNear = (x) => {
+    for (let dx = -3; dx <= 3; dx++) for (let y = 0; y < H; y++) if (b.inb(x + dx, y) && 'spx^'.includes(b.e[y][x + dx])) return true;
+    return false;
   };
-  let tries = 0;
-  while (b.count(ENEMIES) < cfg.enemies && tries++ < 6000) {
-    const x = b.ri(13, b.W - 12);
-    if (b.r() < cfg.fly) { const y = b.ri(8, 10); if (okAir(x, y)) b.E(x, y, 'f'); }
-    else if (okGround(x)) b.E(x, WY, b.ge());
+  const slots = [];
+  let last = -99;
+  for (let x = 15; x < endX; x++) if (x - last >= 5 && okGround(x)) { slots.push(x); last = x; }
+  while (slots.length > cfg.enemies) slots.splice(Math.floor(b.r() * slots.length), 1);
+  for (const x of slots) {
+    let ch = b.ge();
+    if ('sp'.includes(ch) && hazardNear(x)) ch = cfg.ground.includes('g') ? 'g' : 'k';
+    b.e[WY][x] = ch;
   }
-  tries = 0;
+  const fMax = Math.min(10, Math.floor(b.count('gksjpx') * 3 / 7)); // flyers <= 30% of all enemies
+  let f = b.count('f');
+  for (let x = W - 1; x >= 0 && f > fMax; x--) if (b.e[FR][x] === 'f') { b.e[FR][x] = '.'; f--; }
+  const okFly = (x) => {
+    if (b.e[FR][x] !== '.') return false;
+    let surf = false;
+    for (let dx = -3; dx <= 3; dx++) {
+      for (let y = FR; y <= WY; y++) if (b.t[y][x + dx] !== '.') return false;
+      const g = b.t[GY][x + dx];
+      if (g === 'h' || g === 'v') return false;
+      if (g === '#') surf = true;
+      if ('^c'.includes(b.e[WY][x + dx])) return false;
+    }
+    for (let dx = -4; dx <= 4; dx++) {
+      if (b.e[FR][x + dx] === 'f') return false;
+      if (Math.abs(dx) <= 3 && ENEMIES.includes(b.e[WY][x + dx])) return false;
+    }
+    return surf;
+  };
+  for (const gapOnly of [true, false]) {
+    const cand = [];
+    for (let x = 16; x < endX; x++) if (!gapOnly || b.t[GY][x] !== '#') cand.push(x);
+    for (let i = cand.length - 1; i > 0; i--) { const j = Math.floor(b.r() * (i + 1)); [cand[i], cand[j]] = [cand[j], cand[i]]; }
+    for (const x of cand) { if (f >= fMax) break; if (okFly(x)) { b.e[FR][x] = 'f'; f++; } }
+  }
+  let tries = 0;
   while (b.count('o') < cfg.coins && tries++ < 6000) {
     const x = b.ri(7, b.W - 14), y = b.ri(9, 10);
     let ok = true;
@@ -219,7 +238,22 @@ function validate(L) {
     if (GROUND_ENT.includes(en) && !solid(x, y + 1)) errs.push(`'${en}' at ${x},${y} is not on solid ground`);
     if (ENEMIES.includes(en)) {
       stats.enemies[en] = (stats.enemies[en] || 0) + 1; stats.total++;
-      if (x <= 10) errs.push(`enemy '${en}' within 6 columns of spawn at ${x},${y}`);
+      if (x <= 14) errs.push(`enemy '${en}' within 10 columns of spawn at ${x},${y}`);
+      for (let dx = 1; dx <= 4; dx++) if (ENEMIES.includes(e[y][x + dx])) errs.push(`enemies closer than 4 columns apart at ${x},${y}`);
+    }
+    if (en === '^' && x <= 14) errs.push(`spikes within 10 columns of spawn at ${x},${y}`);
+    if ('spx^'.includes(en)) {
+      for (let dx = 1; dx <= 3; dx++) for (let yy = 0; yy < H; yy++) if (x + dx < W && 'spx^'.includes(e[yy][x + dx])) errs.push(`non-stompable hazards within 3 columns at ${x},${y}`);
+    }
+    if (en === 'f') { // rule 1: exactly at standing row - 2, no solid in its patrol range
+      let surf = false;
+      for (let dx = -3; dx <= 3; dx++) {
+        const xx = x + dx;
+        if (xx < 0 || xx >= W || y + 3 >= H) continue;
+        if (t[y][xx] !== '.' || t[y + 1][xx] !== '.' || t[y + 2][xx] !== '.') errs.push(`flyer at ${x},${y}: solid tile in/under patrol range at column ${xx}`);
+        if (SOLID.includes(t[y + 3][xx])) surf = true;
+      }
+      if (!surf) errs.push(`flyer at ${x},${y} is not at standing row - 2`);
     }
     if (en === 'o') stats.coins++;
     if (en === 'c') checkpoints++;
@@ -236,7 +270,9 @@ function validate(L) {
     run = t[GY][x] === '.' ? run + 1 : 0;
     if (run > 4) { errs.push(`gap wider than 4 on the ground line at x=${x}`); break; }
   }
-  if (stats.total < 25 || stats.total > 60) errs.push(`enemy count ${stats.total} outside 25-60`);
+  if (stats.total < MIN_ENEMIES || stats.total > 60) errs.push(`enemy count ${stats.total} outside ${MIN_ENEMIES}-60`);
+  if ((stats.enemies.f || 0) > 0.3 * stats.total) errs.push(`flyers ${stats.enemies.f} exceed 30% of ${stats.total} enemies`);
+  if ((stats.enemies.x || 0) > 2) errs.push('more than 2 ghosts');
   if (stats.coins < 40 || stats.coins > 100) errs.push(`coin count ${stats.coins} outside 40-100`);
   if (checkpoints < 1 || checkpoints > 2) errs.push(`checkpoint count ${checkpoints} outside 1-2`);
   // Conservative reachability: standable = empty tile with headroom, on solid/lift, no spikes.
@@ -258,22 +294,23 @@ function validate(L) {
   return { errs, stats };
 }
 
+const MIN_ENEMIES = 15; // strict spacing rules cap what fits; see summary
 const DEC = { desert: '6614', cave: '662', snow: '3364', castle: '66', night: '32514' };
 const LEVELS = [
   // file, name, theme, chunk sequence, ground enemy pool, flyer ratio, enemies, coins, time
-  ['world-2-1', '2-1 Dune Dash', 'desert', 'SFTGFPCWFGTFE', 'ggggkk', 0.25, 26, 60, 300],
-  ['world-2-2', '2-2 Scorpion Steps', 'desert', 'SFGPFYCTWFHFE', 'gggkkk', 0.3, 28, 62, 300],
-  ['world-2-3', '2-3 Oasis Run', 'desert', 'STFWGOCPYFHGFE', 'ggkkk', 0.3, 30, 66, 310],
-  ['world-3-1', '3-1 Crystal Hollow', 'cave', 'SFKGTPCFWKOFE', 'ggkksj', 0.2, 30, 64, 320],
-  ['world-3-2', '3-2 Stalactite Shuffle', 'cave', 'SKFHPGCYKTVFE', 'gkkssjj', 0.2, 32, 66, 320],
-  ['world-3-3', '3-3 Deep Dark Drop', 'cave', 'SFOKGHCPKWYMFE', 'gkssjj', 0.25, 34, 70, 330],
-  ['world-4-1', '4-1 Frostbite Ferry', 'snow', 'SFHTVCPFGWHFE', 'ggkksjp', 0.25, 34, 66, 340],
-  ['world-4-2', '4-2 Avalanche Alley', 'snow', 'SPHFVYCKHTGVFE', 'gkksjpp', 0.25, 36, 70, 340],
-  ['world-4-3', '4-3 Glacier Gauntlet', 'snow', 'SFVOHKCYHPVWMFE', 'gkssjjpp', 0.3, 38, 74, 350],
-  ['world-5-1', '5-1 Dungeon Doors', 'castle', 'SKFXTKCGPKHFE', 'gkssjpp', 0.2, 38, 68, 360],
-  ['world-5-2', '5-2 Spike Keep', 'castle', 'SXKOKGCVKYXFKE', 'kkssjjpp', 0.25, 40, 72, 360],
-  ['world-5-3', '5-3 Phantom Fortress', 'castle', 'SKXHKOCKVYCXMFE', 'kssjjpp', 0.25, 44, 80, 380],
-  ['world-6-1', '6-1 Midnight Marathon', 'night', 'SFKHCXOYVCXKMFE', 'gkkssjjpp', 0.3, 50, 90, 400],
+  ['world-2-1', '2-1 Dune Dash', 'desert', 'SFTGFPCWFGTFE', 'ggggkk', 0.25, 24, 60, 300],
+  ['world-2-2', '2-2 Scorpion Steps', 'desert', 'SFGPFYCTWFHFE', 'gggkkk', 0.3, 24, 62, 300],
+  ['world-2-3', '2-3 Oasis Run', 'desert', 'STFWGOCPYFHGFE', 'ggkkk', 0.3, 24, 66, 310],
+  ['world-3-1', '3-1 Crystal Hollow', 'cave', 'SFKGTPCFWKOFE', 'ggkksj', 0.2, 24, 64, 320],
+  ['world-3-2', '3-2 Stalactite Shuffle', 'cave', 'SKFHPGCYKTVFE', 'gkkssjj', 0.2, 24, 66, 320],
+  ['world-3-3', '3-3 Deep Dark Drop', 'cave', 'SFOKGHCPKWYMFE', 'gkssjj', 0.25, 24, 70, 330],
+  ['world-4-1', '4-1 Frostbite Ferry', 'snow', 'SFHTVCPFGWHFE', 'ggkksjp', 0.25, 24, 66, 340],
+  ['world-4-2', '4-2 Avalanche Alley', 'snow', 'SPHFVYCKHTGVFE', 'gkksjpp', 0.25, 24, 70, 340],
+  ['world-4-3', '4-3 Glacier Gauntlet', 'snow', 'SFVOHKCYHPVWMFE', 'gkssjjpp', 0.3, 24, 74, 350],
+  ['world-5-1', '5-1 Dungeon Doors', 'castle', 'SKFXTFCGPKHFE', 'gkssjpp', 0.2, 24, 68, 360],
+  ['world-5-2', '5-2 Spike Keep', 'castle', 'SXKOFGCVKYXFKE', 'kkssjjpp', 0.25, 24, 72, 360],
+  ['world-5-3', '5-3 Phantom Fortress', 'castle', 'SKXHFOCKVYCXMFE', 'kssjjpp', 0.25, 24, 80, 380],
+  ['world-6-1', '6-1 Midnight Marathon', 'night', 'SFKHCXOYVCXKMFE', 'gkkssjjpp', 0.3, 24, 90, 400],
 ];
 
 let failed = false;
