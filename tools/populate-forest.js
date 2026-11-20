@@ -10,7 +10,7 @@ const DIR = path.join(__dirname, '..', 'public', 'levels');
 const LEVELS = [
   { file: 'forest-1-1.json', name: '1-1 Forest Stroll', timeLimit: 300, seed: 101, ground: 14, k: 3, f: 3, s: 0, j: 0, spikes: 1, coins: 70 },
   { file: 'forest-1-2.json', name: '1-2 Hollow Tree Climb', timeLimit: 400, seed: 202, ground: 17, k: 2, f: 4, s: 0, j: 0, spikes: 0, coins: 68 },
-  { file: 'forest-1-3.json', name: '1-3 Mossy Lake Run', timeLimit: 300, seed: 303, ground: 22, k: 4, f: 4, s: 2, j: 2, spikes: 2, coins: 76 },
+  { file: 'forest-1-3.json', name: '1-3 Mossy Lake Run', timeLimit: 300, seed: 303, ground: 22, k: 4, f: 4, s: 0, j: 2, spikes: 0, coins: 76 },
 ];
 const ENEMY_RANGE = { 'forest-1-1.json': [14, 20], 'forest-1-2.json': [18, 26], 'forest-1-3.json': [22, 30] };
 const ALLOWED = '.omc^gkfsjxp';
@@ -213,27 +213,37 @@ function populate(cfg, print) {
   }
   gaps.sort((a, b) => order({ x: a.x0, y: a.y }, { x: b.x0, y: b.y }));
 
-  // ---- flyers: open air 2-3 tiles above ground, preferably over gaps ---------------------------
-  const flyerSpot = (x, y) => {
-    if (!enemyZoneOk(x, y) || !clearOfEnemies(x, y, 4) || !clearOfCp(x, y)) return false;
-    for (let d = -2; d <= 2; d++) if (!empty(x + d, y) || E[y][x + d] !== '.') return false;
-    return empty(x, y + 1) && open(x, y - 1);
-  };
-  let flyers = 0;
-  const tryFlyer = (x, groundY) => {
-    if (flyers >= cfg.f) return;
-    const hs = rnd() < 0.5 ? [2, 3] : [3, 2];
-    for (const h of hs) {
-      if (flyerSpot(x, groundY - h) && put(x, groundY - h, 'f')) { enemies.push({ x, y: groundY - h, ch: 'f' }); flyers++; return; }
+  // ---- flyers: EXACTLY at row R-2 (R = standing row) over flat ground, or over a gap whose edges stand at R ----
+  // patrol range = 3 columns each side; nothing but air at the flyer row, no ground higher than R anywhere under it
+  const flyerRuleOk = (fx, fy) => {
+    if (fy < 0) return false;
+    let exact = 0;
+    for (let c = fx - 3; c <= fx + 3; c++) {
+      if (c < 0 || c >= W || !empty(c, fy) || !open(c, fy + 1) || !open(c, fy + 2)) return false;
+      if (solid(c, fy + 3)) { exact++; continue; }
+      let l = c, r = c;
+      while (l > 0 && c - l < 8 && !solid(l, fy + 3)) l--;
+      while (r < W - 1 && r - c < 8 && !solid(r, fy + 3)) r++;
+      if (!solid(l, fy + 3) || !solid(r, fy + 3)) return false;
+      for (let q = l; q <= r; q++) if (!open(q, fy) || !open(q, fy + 1) || !open(q, fy + 2)) return false;
     }
+    return exact >= 2;
   };
-  for (const gp of spread(gaps.filter(q => q.w >= 2), cfg.f * 2)) tryFlyer((gp.x0 + gp.x1) >> 1, gp.y);
-  if (flyers < cfg.f) {
-    const cands = [];
-    for (const r of runs) if (r.reach && r.len >= 4) cands.push({ x: (r.x0 + r.x1) >> 1, y: r.y });
-    cands.sort(order);
-    for (const c of spread(cands, cands.length)) tryFlyer(c.x, c.y);
-  }
+  const noLiftNear = (x, y) => {
+    for (let yy = y - 4; yy <= y + 6; yy++) for (let xx = x - 7; xx <= x + 7; xx++) { const t = tile(xx, yy); if (t === 'h' || t === 'v') return false; }
+    return true;
+  };
+  const flyerSpot = (x, y) => flyerRuleOk(x, y) && noLiftNear(x, y) && [-3, 0, 3].every(d => enemyZoneOk(x + d, y)) && clearOfCp(x, y) && E[y][x] === '.' &&
+    enemies.every(e => e.ch !== 'f' || Math.abs(e.x - x) >= 8 || Math.abs(e.y - y) > 3);
+  let flyers = 0;
+  const placeFlyer = (x, y) => { if (flyers < cfg.f && flyerSpot(x, y) && put(x, y, 'f')) { enemies.push({ x, y, ch: 'f' }); flyers++; } };
+  const gapSpots = gaps.filter(q => q.w >= 2).map(q => ({ x: (q.x0 + q.x1) >> 1, y: q.y - 2 })).filter(q => flyerSpot(q.x, q.y));
+  for (const q of spread(gapSpots, Math.ceil(cfg.f / 2))) placeFlyer(q.x, q.y);
+  const flatSpots = [];
+  for (const r of runs) if (r.reach) for (let x = r.x0; x <= r.x1; x++) if (flyerSpot(x, r.y - 2)) flatSpots.push({ x, y: r.y - 2 });
+  flatSpots.sort(order);
+  for (const q of spread(flatSpots, cfg.f - flyers)) placeFlyer(q.x, q.y);
+  for (const q of flatSpots) placeFlyer(q.x, q.y);
 
   // ---- spikes: only on wide flat runs with lots of head room (can always be jumped over) ------
   {
@@ -254,6 +264,23 @@ function populate(cfg, print) {
   // ---- coins -----------------------------------------------------------------------------------
   let coins = 0;
   const coin = (x, y) => { if (coins < COIN_MAX && put(x, y, 'o')) { coins++; return true; } return false; };
+  // onboarding: a trail of coins one tile above the standing row (R-1) right after the spawn, on the main route
+  let onboard = 0;
+  {
+    const xs = lvl.spawnTiles.map(q => q.x), lo = Math.min(...xs) + 3, both = Math.max(...xs) + 3, hi = Math.min(...xs) + 12;
+    let R = sy, inBoth = 0;
+    for (let x = sp.x + 1; x <= hi && !(onboard >= 5 && inBoth >= 4) && onboard < 7; x++) {
+      let best = null;
+      for (let y = 0; y < H; y++) if (surface(x, y) && reached(x, y) && (best === null || Math.abs(y - R) < Math.abs(best - R))) best = y;
+      if (best === null) continue;
+      R = best;
+      if (x >= lo && coin(x, R - 1)) { onboard++; if (x >= both) inBoth++; }
+    }
+  }
+  // rows on the flat runs of the main route first (R-2, or R-1 under low ceilings)
+  const routeRuns = [];
+  for (const [x, y] of route) { const r = runAt.get(key(x, y)); if (r && !routeRuns.includes(r)) routeRuns.push(r); }
+  for (const r of routeRuns) if (r.len >= 5) flatRows(r);
   // arcs over gaps
   for (const gp of gaps) {
     if (coins >= cfg.coins || gp.w < 2) continue;
@@ -275,9 +302,9 @@ function populate(cfg, print) {
     for (let i = 0; i < n; i++) coin(x0 + i, r.y);
   }
   // rows of 3-5 coins floating 2 tiles above flat ground
-  const flat = runs.filter(r => r.reach && r.len >= 5);
+  const flat = runs.filter(r => r.reach && r.len >= 5 && !routeRuns.includes(r));
   for (let i = flat.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [flat[i], flat[j]] = [flat[j], flat[i]]; }
-  const coinRow = (r, n, x0) => {
+  function coinRow(r, n, x0) {
     for (const h of [2, 1]) {
       let ok = true;
       for (let i = 0; i < n; i++) for (let d = 1; d <= h; d++) if (!empty(x0 + i, r.y - d)) ok = false;
@@ -288,8 +315,8 @@ function populate(cfg, print) {
     }
     return false;
   };
-  for (const r of flat) {
-    if (coins >= cfg.coins) break;
+  function flatRows(r) {
+    if (coins >= cfg.coins) return;
     const n = Math.min(3 + Math.floor(rnd() * 3), r.len - 2, cfg.coins - coins < 3 ? 3 : 5);
     const rows = r.len >= 16 ? 2 : 1;
     for (let k = 0; k < rows; k++) {
@@ -298,6 +325,7 @@ function populate(cfg, print) {
       if (x0 + n - 1 <= r.x1) coinRow(r, n, x0);
     }
   }
+  for (const r of flat) flatRows(r);
   // top-up (cramped levels): short trails at head height / walking height on the remaining runs
   for (const minLen of [3, 2, 1]) for (const h of [1, 0]) {
     for (const r of runs.slice().sort(order)) {
@@ -323,6 +351,7 @@ function populate(cfg, print) {
       if (T[y][x] !== '.') errors.push(`(${x},${y}) ${ch} on non-empty tile ${T[y][x]}`);
       if ((GROUND.includes(ch) || ch === 'c' || ch === '^') && !solid(x, y + 1)) errors.push(`(${x},${y}) ${ch} without solid ground below`);
       if (ENEMIES.includes(ch) && !enemyZoneOk(x, y)) errors.push(`(${x},${y}) enemy ${ch} inside spawn/goal safe zone`);
+      if (ch === 'f' && !flyerRuleOk(x, y)) errors.push(`(${x},${y}) flyer is not exactly at row R-2 over ground/gap edges or has a blocked patrol range`);
     });
   });
   const nEnemies = [...ENEMIES].reduce((n, ch) => n + (counts[ch] || 0), 0);
@@ -334,6 +363,7 @@ function populate(cfg, print) {
   if ((counts.m || 0) !== 1) errors.push(`hearts: ${counts.m || 0}`);
   if ((counts['^'] || 0) > 3) errors.push('too many spikes');
   if (counts.x) errors.push('ghosts are not allowed in world 1');
+  if (onboard < 4) errors.push(`onboarding coin row after the spawn has only ${onboard} coins`);
 
   const summary = `${cfg.file} "${cfg.name}" ${W}x${H} enemies=${nEnemies} ` +
     [...ALLOWED].filter(ch => ch !== '.' && counts[ch]).map(ch => `${ch}=${counts[ch]}`).join(' ') +
