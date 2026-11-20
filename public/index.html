@@ -33,6 +33,19 @@
       <div id="waiting-player-banner" class="top-banner hidden">Waiting for player 2</div>
 
       <section id="menu-overlay" class="open home-mode">
+        <div class="menu-scenery" aria-hidden="true">
+          <span class="px-cloud cloud-a"></span>
+          <span class="px-cloud cloud-b"></span>
+          <span class="px-cloud cloud-c"></span>
+          <span class="px-hill hill-a"></span>
+          <span class="px-hill hill-b"></span>
+          <span class="px-hill hill-c"></span>
+          <span class="scenery-qblock">?</span>
+          <span class="scenery-coin"></span>
+          <img class="scenery-hero hero-one" src="assets/players/player1/idle.png" alt="" />
+          <img class="scenery-hero hero-two" src="assets/players/player2/idle.png" alt="" />
+          <div class="scenery-ground"></div>
+        </div>
         <div class="menu-home" id="menu-main-screen">
           <div class="home-hero">
             <header class="home-identity">
@@ -50,6 +63,20 @@
               <button id="menu-settings-btn" class="home-module home-settings" type="button">Settings</button>
             </div>
           </div>
+
+          <aside class="how-to-play" aria-label="How to play">
+            <h2>How to Play</h2>
+            <ul>
+              <li><span>Move</span><span class="htp-keys"><kbd>A</kbd><kbd>D</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd></span></li>
+              <li><span>Jump</span><span class="htp-keys"><kbd>W</kbd><kbd>Space</kbd></span></li>
+              <li><span>Pause</span><span class="htp-keys"><kbd>Esc</kbd></span></li>
+              <li><span>Next level</span><span class="htp-keys"><kbd>Enter</kbd></span></li>
+              <li><span>Mute</span><span class="htp-keys"><kbd>M</kbd></span></li>
+              <li class="htp-tip">Stomp enemies from above</li>
+              <li class="htp-tip">Collect coins for score</li>
+              <li class="htp-tip">Both players must reach the flag</li>
+            </ul>
+          </aside>
 
           <nav class="home-nav" aria-label="Main menu">
             <button id="menu-app-btn" class="home-module home-nav-button" type="button">
@@ -205,6 +232,8 @@ Alan</p>
     </main>
 
     <script src="/socket.io/socket.io.js"></script>
+    <script src="audio.js"></script>
+    <script src="controls.js"></script>
     <script src="game.js"></script>
   </body>
 </html>

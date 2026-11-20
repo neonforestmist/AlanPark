@@ -8,6 +8,9 @@ A 2D-platformer game inspired by Super Mario Bros. with the gimmick of two playe
 - The lobby shows both players. The host selects **Start Together** once both have joined.
 - Both players are connected by a **configurable tether** (host can adjust from menu and in the HUD), and must both work together to clear the level.
 - Round completes only when **both players are inside the goal**.
+- **16 levels across six worlds** (forest, desert, cave, snow, castle, night). After a level clear the host continues to the next level, and score, coins and lives carry over.
+- **Enemies**: walkers, beetles, flyers and jumpers can be stomped from above; spikies, ghosts and poppers cannot. Spikes hurt too.
+- The team shares **lives**. A hit or a fall costs one, a heart or every 50th coin gives one back, and **checkpoint flags** set where you return after a fall or a game over.
 
 <img src="demo-assets/in-game.png" alt="In-game" width="75%" />
 
@@ -16,7 +19,13 @@ A 2D-platformer game inspired by Super Mario Bros. with the gimmick of two playe
 | --- | --- |
 | Movement | WASD / Arrow Keys |
 | Jump | Space / W |
+| Pause menu | Esc |
+| Next level (host, after a level clear) | Enter |
+| Vote to restart | R |
+| Mute | M |
 | Menu/Pause/Restart | On-screen buttons |
+
+Touch screens get on-screen buttons, and gamepads work too (stick or d-pad to move, A to jump, Start to pause).
 
 
 ### Editor
@@ -34,7 +43,9 @@ Built-in browser editor for creating/editing/testing level JSON files for use in
 <img src="demo-assets/editor.png" alt="Editor View" width="75%" />
 
 #### Workflow
-Once you've made your level in the editor, you can export the JSON and then put it in the `public/levels/` folder to be able to use it in game. There are currently 3 levels built in!
+Once you've made your level in the editor, you can export the JSON and then put it in the `public/levels/` folder to be able to use it in game. There are currently 16 levels built in!
+
+A level can also carry a `theme` (`grass`, `desert`, `cave`, `snow`, `castle` or `night`), a `timeLimit` in seconds and an `entities` grid with coins, hearts, checkpoints, spikes and enemies. The editor does not edit these yet, so add them to the exported JSON by hand; the `legend` in `public/levels/forest-1-1.json` lists the symbols.
 
 ### Demo Video
 <video src="demo-assets/demo-video.mp4" controls width="90%"></video>
@@ -93,10 +104,11 @@ npm run check
 npm test
 ```
 
-The tests start a server on a free port and check all three levels, two-player
+The tests start a server on a free port and check the level list, two-player
 movement and jumping, host-only settings, restart voting, spectators, room
-cleanup, reconnect recovery, and editor collaboration. To check a deployed
-server instead:
+cleanup, reconnect recovery, and editor collaboration.
+`tests/game-logic.test.js` covers the coin, enemy, life and checkpoint rules.
+To check a deployed server instead:
 
 ```sh
 TEST_URL=https://alan-park.vercel.app npm test
@@ -107,7 +119,9 @@ Puppeteer is a development-only dependency for the older manual browser scripts;
 the automated `npm test` suite does not need a browser download.
 
 ## Credits
-**Image Assets:** All images/in-game assets were drawn by me, Lukas, using digital editing software.
+**Image Assets:** The original images and in-game assets (characters, forest tiles, decor and title art) were drawn by me, Lukas, using digital editing software.
+
+**Third-party assets:** The enemy and item sprites come from Kenney's Pixel Platformer pack, and the music and sound effects are free chiptune tracks; all of them are CC0. The desert, cave, snow, castle and night tiles and backgrounds are generated pixel art. Sources and authors are listed in `public/assets/CREDITS.md`.
 
 <img src="demo-assets/alan-artiste.png" alt="Alan" width="20%" />
 

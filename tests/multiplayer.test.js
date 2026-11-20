@@ -155,7 +155,7 @@ test("friends join before trail selection and keep the same lobby when the host 
   assert.equal((await request(host, "set-room-level", { levelFile: "forest-1-2.json" })).ok, true);
   for (const update of await Promise.all([hostLevel, guestLevel])) {
     assert.equal(update.roomCode, room.roomCode);
-    assert.equal(update.world.name, "Forest 1-2");
+    assert.equal(update.world.name, "1-2 Hollow Tree Climb");
   }
   const lobby = await event(guest, "state");
   assert.equal(lobby.started, false);
@@ -167,13 +167,17 @@ test("friends join before trail selection and keep the same lobby when the host 
   assert.equal((await request(host, "set-room-level", { levelFile: "forest-1-3.json" })).ok, false);
 });
 
-test("serves all three levels, the game, the editor and their critical assets", async () => {
+test("serves every level, the game, the editor and their critical assets", async () => {
   const response = await fetch(`${baseUrl}/api/levels`);
   assert.equal(response.status, 200);
   const levels = await response.json();
-  assert.deepEqual(levels.map((level) => level.file), [
+  const files = levels.map((level) => level.file);
+  assert.deepEqual(files.slice(0, 3), [
     "forest-1-1.json", "forest-1-2.json", "forest-1-3.json",
   ]);
+  assert.equal(files.length, 16);
+  assert.equal(files[files.length - 1], "world-6-1.json");
+  assert.equal(levels[3].theme, "desert");
   for (const url of ["/", "/editor.html", "/socket.io/socket.io.js", "/game.js",
     "/editor.js", "/assets/title.png", "/assets/players/player1/idle.png",
     ...levels.map((level) => `/levels/${level.file}`)]) {
@@ -181,10 +185,11 @@ test("serves all three levels, the game, the editor and their critical assets", 
   }
 });
 
+const FOREST_NAMES = ["1-1 Forest Stroll", "1-2 Hollow Tree Climb", "1-3 Mossy Lake Run"];
 for (let number = 1; number <= 3; number += 1) {
   test(`two players can host and join Forest 1-${number}`, async (t) => {
     const { host, room, joined } = await pair(t, `forest-1-${number}.json`);
-    assert.equal(room.world.name, `Forest 1-${number}`);
+    assert.equal(room.world.name, FOREST_NAMES[number - 1]);
     assert.equal(joined.world.name, room.world.name);
     assert.notEqual(room.profile, joined.profile);
     const state = await event(host, "state", (state) => state.status === "playing");

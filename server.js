@@ -4,6 +4,7 @@ const http = require("http");
 const os = require("os");
 const path = require("path");
 const { Server } = require("socket.io");
+const Game = require("./game-logic");
 
 const PORT = process.env.PORT === undefined ? 3000 : Number(process.env.PORT);
 const HOST = "0.0.0.0";
@@ -200,6 +201,7 @@ app.get("/api/levels", (_req, res) => {
               : file.replace(/\.json$/, ""),
           rows,
           cols,
+          theme: Game.normalizeTheme(parsed.theme),
         };
       } catch (_err) {
         return { file, name: file.replace(/\.json$/, ""), rows: 0, cols: 0 };
@@ -570,6 +572,9 @@ function buildWorld(levelConfig) {
     waterZones: toWaterRects(tiles, tileSize),
     movingPlatforms,
     movingPlatformById,
+    theme: Game.normalizeTheme(levelConfig.theme),
+    timeLimit: Game.normalizeTimeLimit(levelConfig.timeLimit),
+    entities: Game.normalizeEntityRows(levelConfig.entities, tiles),
   };
 }
 
@@ -583,6 +588,9 @@ function buildWorldPayload(w) {
     columns: w.columns,
     tiles: w.tiles,
     decor: w.decor,
+    theme: w.theme,
+    timeLimit: w.timeLimit,
+    entities: w.entities,
     spawn: w.spawn,
     goal: w.goal,
     movingPlatforms: serializeMovingPlatforms(w.movingPlatforms),
@@ -635,6 +643,9 @@ function createRoom(code, hostId, tetherLength, world) {
     sharedTetherMidAirJumpCount: 0,
     players: new Map(),
     spectators: new Set(),
+    game: Game.createGameState(world),
+    levelFile: "",
+    gameOverAt: 0,
   };
 }
 
@@ -717,6 +728,9 @@ function createPlayer(socketId, slot, profile, customName, world) {
     goalLocked: false,
     goalLockX: 0,
     goalLockY: 0,
+    invulnUntil: 0,
+    fell: false,
+    stompCombo: 0,
     input: { left: false, right: false, jump: false },
   };
   nudgePlayerOutOfSolids(player, world);
@@ -769,8 +783,10 @@ function resetPlayer(player, world) {
   player.input.jump = false;
 }
 
-function resetRound(room) {
+function resetRound(room, carry, keepCheckpoint) {
   clearRestartVotes(room);
+  room.game = Game.createGameState(room.world, carry || null, keepCheckpoint ? room.game : null);
+  room.gameOverAt = 0;
   room.sharedTetherMidAirJumpCount = 0;
   for (const socketId of room.slots) {
     if (!socketId) {
@@ -781,6 +797,7 @@ function resetRound(room) {
       resetPlayer(player, room.world);
     }
   }
+  Game.moveToCheckpoint(room.game, getPlayables(room), Date.now());
   room.status = getActivePlayerCount(room) === 2 ? "playing" : "waiting";
   room.winnerAt = 0;
 }
@@ -1118,6 +1135,7 @@ function keepInBounds(player, world) {
   }
   if (player.y > world.height + 260) {
     resetPlayer(player, world);
+    player.fell = true;
   }
 }
 
@@ -1468,6 +1486,7 @@ function serializePlayer(player) {
     width: player.width,
     height: player.height,
     goalLocked: Boolean(player.goalLocked),
+    inv: Date.now() < (player.invulnUntil || 0),
     connected: !disconnectedClients.has(player.id),
   };
 }
@@ -1488,6 +1507,7 @@ function getStatePayload(room) {
     },
     movingPlatforms: serializeMovingPlatforms(room.world.movingPlatforms),
     serverTime: Date.now(),
+    ...Game.serializeGame(room),
   };
 }
 
@@ -1854,6 +1874,7 @@ io.on("connection", (socket) => {
       const levelFile = payload && typeof payload.levelFile === "string" ? payload.levelFile : DEFAULT_LEVEL_FILE;
       const world = loadWorldFromFile(levelFile);
       const room = createRoom(roomCode, socket.id, tetherLength, world);
+      room.levelFile = resolveLevelFilePath(levelFile).safeName;
       rooms.set(roomCode, room);
 
       const info = assignSocketToRoom(
@@ -1927,12 +1948,41 @@ io.on("connection", (socket) => {
       const nextWorld = buildWorld(JSON.parse(fs.readFileSync(filePath, "utf8")));
       room.world = nextWorld;
       room.worldPayload = buildWorldPayload(nextWorld);
+      room.levelFile = safeName;
+      room.game = Game.createGameState(nextWorld);
       for (const player of room.players.values()) resetPlayer(player, nextWorld);
       io.to(room.code).emit("room-level", { roomCode: room.code, world: room.worldPayload });
       emitRoomState(room);
       if (typeof reply === "function") reply({ ok: true });
     } catch (_error) {
       if (typeof reply === "function") reply({ ok: false, error: "That trail is unavailable." });
+    }
+  });
+
+  socket.on("next-level", (_payload, reply) => {
+    const info = clients.get(socket.id);
+    const room = rooms.get(info && info.roomCode);
+    if (!room || room.hostId !== socket.id || room.status !== "won") {
+      if (typeof reply === "function") {
+        reply({ ok: false, error: "Only the host can continue after a level clear." });
+      }
+      return;
+    }
+    try {
+      const entries = listLevelEntries();
+      const index = entries.findIndex((entry) => entry.file === room.levelFile);
+      const next = entries[(index + 1) % entries.length];
+      const nextWorld = buildWorld(JSON.parse(fs.readFileSync(next.filePath, "utf8")));
+      const carry = { score: room.game.score, coins: room.game.coins, lives: room.game.lives };
+      room.world = nextWorld;
+      room.worldPayload = buildWorldPayload(nextWorld);
+      room.levelFile = next.file;
+      io.to(room.code).emit("room-level", { roomCode: room.code, world: room.worldPayload });
+      resetRound(room, carry);
+      emitRoomState(room);
+      if (typeof reply === "function") reply({ ok: true });
+    } catch (_error) {
+      if (typeof reply === "function") reply({ ok: false, error: "The next level is unavailable." });
     }
   });
 
@@ -2139,6 +2189,13 @@ io.on("connection", (socket) => {
 
 // --- Game loop ------------------------------------------------------------
 
+function fxHooks(room) {
+  return {
+    emitFx: (payload) => io.to(room.code).emit("fx", payload),
+    resetPlayer: (player) => resetPlayer(player, room.world),
+  };
+}
+
 let lastRecoveryHeartbeat = 0;
 const gameLoop = setInterval(() => {
   // Keep recovery offsets fresh even in an idle lobby or editor. Frames and
@@ -2151,6 +2208,10 @@ const gameLoop = setInterval(() => {
     const world = room.world;
     updateMatchState(room);
     if (room.status !== "reconnecting") updateMovingPlatforms(world, DT);
+
+    if (room.status === "gameover" && Date.now() - room.gameOverAt > 4500) {
+      resetRound(room, null, true);
+    }
 
     if (room.status === "playing") {
       const playables = getPlayables(room);
@@ -2191,7 +2252,12 @@ const gameLoop = setInterval(() => {
         if (playables[0].goalLocked && playables[1].goalLocked) {
           room.status = "won";
           room.winnerAt = Date.now();
+          Game.awardWinBonus(room, fxHooks(room));
         }
+      }
+
+      if (room.status === "playing") {
+        Game.step(room, playables, DT, Date.now(), fxHooks(room));
       }
 
       for (const player of playables) {
