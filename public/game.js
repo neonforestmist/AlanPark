@@ -2352,14 +2352,26 @@ function drawOverlays() {
     if (lastWinBonus > 0) {
       drawOutlinedText(`TIME BONUS +${lastWinBonus}`, width / 2, height / 2 - 24, "#ffd23f");
     }
+    const finalLevel = isFinalLevel();
+    if (finalLevel) {
+      drawOutlinedText("YOU CLEARED EVERY WORLD!", width / 2, height / 2 - 60, "#7dff9b");
+    }
+    const hostPrompt = finalLevel
+      ? "PRESS ENTER TO PLAY AGAIN FROM WORLD 1-1"
+      : "PRESS ENTER OR TAP FOR THE NEXT LEVEL";
     drawOutlinedText(
-      isHost ? "PRESS ENTER OR TAP FOR THE NEXT LEVEL" : "WAITING FOR THE HOST TO CONTINUE...",
+      isHost ? hostPrompt : "WAITING FOR THE HOST TO CONTINUE...",
       width / 2,
       height / 2 + 12,
       "#ffffff"
     );
   }
   ctx.textAlign = "left";
+}
+
+function isFinalLevel() {
+  if (!Array.isArray(cachedLevels) || cachedLevels.length === 0 || !state.game) return false;
+  return cachedLevels[cachedLevels.length - 1].file === state.game.level;
 }
 
 function requestNextLevel() {
@@ -2406,6 +2418,10 @@ canvas.addEventListener("pointerdown", () => {
 if (levelCompleteBannerEl) {
   levelCompleteBannerEl.addEventListener("click", requestNextLevel);
 }
+
+document.addEventListener("click", (event) => {
+  if (event.target instanceof Element && event.target.closest("button")) playSfx("select");
+});
 
 function frame() {
   drawWorld();
